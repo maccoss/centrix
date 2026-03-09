@@ -1,0 +1,5 @@
+# Explicitly link OpenBLAS on Linux/WSL.
+# openblas-src with features=["system"] sets the search path but the link
+# library flag needs to be explicit when the crate is optional.
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-lopenblas"]

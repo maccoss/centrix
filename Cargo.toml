@@ -1,0 +1,75 @@
+[package]
+name = "centrix"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+authors = ["MacCoss Lab <maccoss@uw.edu>"]
+description = "Post-acquisition centroiding for Thermo Stellar linear ion trap DIA data"
+
+[[bin]]
+name = "centrix"
+path = "src/main.rs"
+
+[lib]
+name = "centrix"
+path = "src/lib.rs"
+
+[features]
+default = ["openblas"]
+openblas = ["blas-src/openblas", "dep:openblas-src"]
+mkl = ["blas-src/intel-mkl"]
+
+[dependencies]
+# mzML I/O
+mzdata = "0.63"
+quick-xml = "0.37"
+base64 = "0.22"
+flate2 = "1.0"
+sha1 = "0.10"
+
+# Linear algebra
+ndarray = { version = "0.16", features = ["rayon", "blas"] }
+blas-src = { version = "0.10", default-features = false }
+openblas-src = { version = "0.10", default-features = false, features = ["system", "cblas"], optional = true }
+
+# Parallelism
+rayon = "1.10"
+
+# CLI + config
+clap = { version = "4.5", features = ["derive", "env"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+
+# Logging + errors
+log = "0.4"
+env_logger = "0.11"
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Utilities
+indicatif = "0.17"
+chrono = "0.4"
+sysinfo = "0.33"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+approx = "0.5"
+tempfile = "3.14"
+
+[[bench]]
+name = "lasso_benchmark"
+harness = false
+
+[[bench]]
+name = "centroid_benchmark"
+harness = false
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+
+[profile.bench]
+inherits = "release"
+debug = true
