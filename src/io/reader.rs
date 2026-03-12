@@ -48,6 +48,11 @@ impl ProfileReader {
     pub fn path(&self) -> &Path {
         &self.path
     }
+
+    /// Total number of spectra, if available from mzML metadata.
+    pub fn spectrum_count_hint(&self) -> Option<u64> {
+        self.inner.spectrum_count_hint()
+    }
 }
 
 impl Iterator for ProfileReader {

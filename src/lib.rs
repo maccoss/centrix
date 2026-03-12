@@ -14,6 +14,9 @@ pub use error::{CentrixError, Result};
 
 /// Run the centroiding pipeline with the given configuration.
 pub fn run(config: &Config) -> Result<()> {
+    use indicatif::{ProgressBar, ProgressStyle};
+    use rayon::prelude::*;
+
     log::info!(
         "centrix {}: {} -> {}",
         env!("CARGO_PKG_VERSION"),
@@ -43,31 +46,95 @@ pub fn run(config: &Config) -> Result<()> {
         cal.grid_spacing_ms2,
     );
 
-    // Phase 4: centroid each spectrum
-    log::info!("Centroiding spectra...");
-    let basis_ms1 = basis::BasisPrecompute::new(cal.sigma_ms1, cal.grid_spacing_ms1, 0.0, config.lambda_factor);
-    let basis_ms2 = basis::BasisPrecompute::new(cal.sigma_ms2, cal.grid_spacing_ms2, 0.0, config.lambda_factor);
+    // Centroid + write output using batched rayon parallelism
+    let basis_ms1 = basis::BasisPrecompute::new(
+        cal.sigma_ms1,
+        cal.grid_spacing_ms1,
+        0.0,
+        config.lambda_factor,
+    );
+    let basis_ms2 = basis::BasisPrecompute::new(
+        cal.sigma_ms2,
+        cal.grid_spacing_ms2,
+        0.0,
+        config.lambda_factor,
+    );
 
+    let mut writer = io::PassthroughWriter::new(&config.input, &config.output)?;
     let reader = io::reader::ProfileReader::open(&config.input)?;
-    let mut n_processed = 0usize;
+
+    // Progress bar
+    let total = reader.spectrum_count_hint().unwrap_or(0);
+    let pb = ProgressBar::new(total);
+    pb.set_style(
+        ProgressStyle::with_template(
+            "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} spectra ({per_sec}, ETA {eta})",
+        )
+        .unwrap()
+        .progress_chars("█▉▊▋▌▍▎▏  "),
+    );
+
+    const BATCH_SIZE: usize = 256;
+    let mut batch: Vec<io::reader::ProfileSpectrum> = Vec::with_capacity(BATCH_SIZE);
     let mut n_centroids_total = 0usize;
+
     for result in reader {
-        let spectrum = result?;
-        let basis = if spectrum.ms_level == 1 { &basis_ms1 } else { &basis_ms2 };
-        let (centroids, stats) = centroid::centroid_spectrum(&spectrum, basis, config);
-        n_centroids_total += centroids.len();
-        n_processed += 1;
-        if n_processed % 1000 == 0 {
-            log::info!("  Processed {n_processed} spectra, {n_centroids_total} centroids so far...");
+        batch.push(result?);
+        if batch.len() < BATCH_SIZE {
+            continue;
         }
-        let _ = stats;
-        let _ = centroids; // writer not yet wired — Phase 5
+
+        // Centroid batch in parallel, preserving order
+        let results: Vec<_> = batch
+            .par_iter()
+            .map(|spectrum| {
+                let basis = if spectrum.ms_level == 1 {
+                    &basis_ms1
+                } else {
+                    &basis_ms2
+                };
+                centroid::centroid_spectrum(spectrum, basis, config)
+            })
+            .collect();
+
+        // Write results in file order (single-threaded I/O)
+        for (centroids, _stats) in &results {
+            writer.write_spectrum(centroids)?;
+            n_centroids_total += centroids.len();
+        }
+
+        pb.inc(batch.len() as u64);
+        batch.clear();
     }
+
+    // Flush remaining partial batch
+    if !batch.is_empty() {
+        let results: Vec<_> = batch
+            .par_iter()
+            .map(|spectrum| {
+                let basis = if spectrum.ms_level == 1 {
+                    &basis_ms1
+                } else {
+                    &basis_ms2
+                };
+                centroid::centroid_spectrum(spectrum, basis, config)
+            })
+            .collect();
+
+        for (centroids, _stats) in &results {
+            writer.write_spectrum(centroids)?;
+            n_centroids_total += centroids.len();
+        }
+
+        pb.inc(batch.len() as u64);
+    }
+
+    pb.finish_with_message("centroiding complete");
+    let n_processed = pb.position();
     log::info!("Centroiding complete: {n_processed} spectra, {n_centroids_total} total centroids");
 
-    // Phase 5: write output (passthrough placeholder until writer is wired)
-    log::info!("Writing output (passthrough — writer not yet wired)...");
-    io::passthrough(config)?;
+    // Finish writing: drain chromatograms, regenerate index/checksum
+    writer.finish()?;
 
     log::info!("Done.");
     Ok(())
@@ -250,18 +317,32 @@ pub fn run_centroid_test(path: &std::path::Path, n: usize, n_cal: usize) -> Resu
         input: path.to_path_buf(),
         output: path.to_path_buf(),
         config: None,
-        sigma_ms1: None, sigma_ms2: None, grid_spacing: None, grid_offset: None,
+        sigma_ms1: None,
+        sigma_ms2: None,
+        grid_spacing: None,
+        grid_offset: None,
         n_calibration_spectra: n_cal,
-        lambda_factor: 3.0, max_lasso_iter: 2000, lasso_tol: 1e-6,
-        lambda_change_threshold: 0.20, single_peak_width_sigma: 2.5,
-        signal_threshold_sigma: 3.0, merge_gap_points: 2, extension_points: 3,
-        min_region_width: 3, noise_window_da: 20.0, noise_step_da: 5.0,
-        threads: 0, stats_output: None, quiet: false, verbose: false,
+        lambda_factor: 3.0,
+        max_lasso_iter: 2000,
+        lasso_tol: 1e-6,
+        lambda_change_threshold: 0.20,
+        signal_threshold_sigma: 3.0,
+        merge_gap_points: 2,
+        extension_points: 3,
+        min_region_width: 3,
+        noise_window_da: 20.0,
+        noise_step_da: 5.0,
+        threads: 0,
+        stats_output: None,
+        quiet: false,
+        verbose: false,
     };
 
-    println!("\n{:<8} {:<5} {:<8} {:<8} {:<8} {:<8} {:<10}  ms",
-        "scan", "MS", "regions", "fast", "lasso", "pass2", "centroids");
-    println!("{}", "─".repeat(76));
+    println!(
+        "\n{:<8} {:<5} {:<8} {:<8} {:<8} {:<10}  ms",
+        "scan", "MS", "regions", "lasso", "pass2", "centroids"
+    );
+    println!("{}", "─".repeat(68));
 
     let reader = io::reader::ProfileReader::open(path)?;
     let mut total_centroids = 0usize;
@@ -270,7 +351,11 @@ pub fn run_centroid_test(path: &std::path::Path, n: usize, n_cal: usize) -> Resu
 
     for result in reader.take(n) {
         let spectrum = result?;
-        let basis = if spectrum.ms_level == 1 { &basis_ms1 } else { &basis_ms2 };
+        let basis = if spectrum.ms_level == 1 {
+            &basis_ms1
+        } else {
+            &basis_ms2
+        };
         let t0 = Instant::now();
         let (centroids, stats) = centroid::centroid_spectrum(&spectrum, basis, &config);
         let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
@@ -279,15 +364,23 @@ pub fn run_centroid_test(path: &std::path::Path, n: usize, n_cal: usize) -> Resu
         count += 1;
 
         if count <= 20 || count % 100 == 0 {
-            println!("{:<8} MS{:<3} {:<8} {:<8} {:<8} {:<8} {:<10}  {:.3}",
-                spectrum.scan_number, spectrum.ms_level,
-                stats.n_regions, stats.n_fast_path, stats.n_lasso,
-                stats.n_pass2_refits, stats.n_centroids, elapsed_ms);
+            println!(
+                "{:<8} MS{:<3} {:<8} {:<8} {:<8} {:<10}  {:.3}",
+                spectrum.scan_number,
+                spectrum.ms_level,
+                stats.n_regions,
+                stats.n_lasso,
+                stats.n_pass2_refits,
+                stats.n_centroids,
+                elapsed_ms
+            );
         }
     }
 
-    println!("{}", "─".repeat(76));
-    println!("Total: {count} spectra, {total_centroids} centroids, avg {:.2} ms/spectrum",
-        total_ms / count.max(1) as f64);
+    println!("{}", "─".repeat(68));
+    println!(
+        "Total: {count} spectra, {total_centroids} centroids, avg {:.2} ms/spectrum",
+        total_ms / count.max(1) as f64
+    );
     Ok(())
 }

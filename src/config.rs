@@ -8,7 +8,6 @@ mod defaults {
     pub const MAX_LASSO_ITER: usize = 1000;
     pub const LASSO_TOL: f64 = 1e-6;
     pub const LAMBDA_CHANGE_THRESHOLD: f64 = 0.20;
-    pub const SINGLE_PEAK_WIDTH_SIGMA: f64 = 2.5;
     pub const SIGNAL_THRESHOLD_SIGMA: f64 = 3.0;
     pub const MERGE_GAP_POINTS: usize = 2;
     pub const EXTENSION_POINTS: usize = 3;
@@ -30,9 +29,6 @@ mod defaults {
     }
     pub fn lambda_change_threshold() -> f64 {
         LAMBDA_CHANGE_THRESHOLD
-    }
-    pub fn single_peak_width_sigma() -> f64 {
-        SINGLE_PEAK_WIDTH_SIGMA
     }
     pub fn signal_threshold_sigma() -> f64 {
         SIGNAL_THRESHOLD_SIGMA
@@ -120,11 +116,6 @@ pub struct Config {
     #[arg(long, default_value_t = defaults::LAMBDA_CHANGE_THRESHOLD)]
     #[serde(default = "defaults::lambda_change_threshold")]
     pub lambda_change_threshold: f64,
-
-    /// Regions narrower than this many σ use the fast 3-point Gaussian fit
-    #[arg(long, default_value_t = defaults::SINGLE_PEAK_WIDTH_SIGMA)]
-    #[serde(default = "defaults::single_peak_width_sigma")]
-    pub single_peak_width_sigma: f64,
 
     /// Signal detection threshold in units of noise σ
     #[arg(long, default_value_t = defaults::SIGNAL_THRESHOLD_SIGMA)]

@@ -1,6 +1,8 @@
 pub mod reader;
 pub mod writer;
 
+pub use writer::PassthroughWriter;
+
 use crate::{Config, Result};
 
 /// Identity passthrough: read profile mzML, write it back unchanged.

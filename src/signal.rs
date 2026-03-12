@@ -1,18 +1,7 @@
 //! Signal region detection in profile mass spectra.
 //!
 //! Identifies contiguous segments of a profile spectrum where signal exceeds
-//! a noise-based threshold. Regions are classified as `SinglePeak` (use the
-//! 3-point Gaussian fast path) or `PotentialComposite` (use LASSO).
-
-/// Classification of a signal region.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RegionClass {
-    /// Width < `single_peak_width_sigma × σ` — use 3-point Gaussian fast path.
-    SinglePeak,
-    /// Wider than a single peak width — could contain multiple overlapping peaks.
-    /// Always processed by LASSO to detect sub-Da overlaps.
-    PotentialComposite,
-}
+//! a noise-based threshold. All detected regions are processed by LASSO.
 
 /// A contiguous signal region in a profile spectrum.
 #[derive(Debug, Clone)]
@@ -29,8 +18,6 @@ pub struct SignalRegion {
     pub max_intensity: f32,
     /// Index of the intensity maximum within the region
     pub apex_idx: usize,
-    /// Classification for centroiding strategy
-    pub classification: RegionClass,
 }
 
 impl SignalRegion {
@@ -55,7 +42,7 @@ impl SignalRegion {
     }
 }
 
-/// Detect and classify signal regions in a profile spectrum.
+/// Detect signal regions in a profile spectrum.
 ///
 /// # Parameters
 /// - `mz`, `intensity`: full spectrum arrays
@@ -65,8 +52,6 @@ impl SignalRegion {
 /// - `merge_gap_pts`: merge adjacent above-threshold segments separated by ≤ this many points
 /// - `extension_pts`: extend each region by this many points on each side
 /// - `min_width_pts`: discard regions narrower than this
-/// - `single_peak_sigma`: σ in m/z for single-peak classification
-/// - `single_peak_width_sigma`: width threshold in units of σ
 ///
 /// # Returns
 /// Sorted list of non-overlapping `SignalRegion`s.
@@ -80,8 +65,6 @@ pub fn detect_signal_regions(
     merge_gap_pts: usize,
     extension_pts: usize,
     min_width_pts: usize,
-    single_peak_sigma_mz: f64,
-    single_peak_width_sigma: f64,
 ) -> Vec<SignalRegion> {
     let n = mz.len();
     if n < 3 {
@@ -125,8 +108,7 @@ pub fn detect_signal_regions(
         }
     }
 
-    // Extend, clamp, filter by min width, classify
-    let single_peak_threshold_mz = single_peak_width_sigma * single_peak_sigma_mz;
+    // Extend, clamp, filter by min width
 
     merged
         .into_iter()
@@ -148,13 +130,6 @@ pub fn detect_signal_regions(
                 },
             );
 
-            let width_mz = mz[end] - mz[start];
-            let classification = if width_mz < single_peak_threshold_mz {
-                RegionClass::SinglePeak
-            } else {
-                RegionClass::PotentialComposite
-            };
-
             Some(SignalRegion {
                 start_idx: start,
                 end_idx: end,
@@ -162,7 +137,6 @@ pub fn detect_signal_regions(
                 mz_end: mz[end],
                 max_intensity,
                 apex_idx,
-                classification,
             })
         })
         .collect()
@@ -172,8 +146,8 @@ pub fn detect_signal_regions(
 mod tests {
     use super::*;
 
-    fn detect(mz: &[f64], intensity: &[f32], threshold: f64, sigma: f64) -> Vec<SignalRegion> {
-        detect_signal_regions(mz, intensity, 0.0, 1.0, threshold, 2, 2, 3, sigma, 2.5)
+    fn detect(mz: &[f64], intensity: &[f32], threshold: f64, _sigma: f64) -> Vec<SignalRegion> {
+        detect_signal_regions(mz, intensity, 0.0, 1.0, threshold, 2, 2, 3)
     }
 
     fn uniform_mz(n: usize, spacing: f64) -> Vec<f64> {
@@ -220,11 +194,6 @@ mod tests {
         }
         let regions = detect(&mz, &intensity, 50.0, 0.340);
         assert_eq!(regions.len(), 1, "overlapping peaks → one merged region");
-        assert_eq!(
-            regions[0].classification,
-            RegionClass::PotentialComposite,
-            "merged region should be classified composite"
-        );
     }
 
     #[test]
@@ -239,18 +208,16 @@ mod tests {
     }
 
     #[test]
-    fn narrow_peak_classified_single() {
-        // Peak width < 2.5σ → SinglePeak
+    fn narrow_peak_detected() {
         let mz = uniform_mz(30, 0.125);
-        // Use a truly narrow 3-point peak (width < single_peak threshold)
+        // Use a truly narrow 3-point peak
         let mut intensity = vec![0.0f32; 30];
         intensity[15] = 1000.0;
         intensity[14] = 500.0;
         intensity[16] = 500.0;
-        // Width of above-threshold region: 3 pts = 0.375 m/z < 0.85 → SinglePeak
         let regions = detect(&mz, &intensity, 100.0, 0.340);
         if !regions.is_empty() {
-            assert_eq!(regions[0].classification, RegionClass::SinglePeak);
+            assert!(regions[0].max_intensity >= 1000.0);
         }
     }
 }

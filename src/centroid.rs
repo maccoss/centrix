@@ -4,28 +4,26 @@
 //!
 //! **Pass 1:**
 //! 1. Rough noise estimate → baseline, noise_sigma
-//! 2. Detect signal regions; classify single-peak vs composite
-//! 3. Single-peak regions → 3-point Gaussian fast path
-//! 4. Composite regions → non-negative LASSO; cache Aᵀy and β
-//! 5. Compute residuals (y − Aβ) for each LASSO region
+//! 2. Detect signal regions
+//! 3. All regions → non-negative LASSO; cache Aᵀy and β
+//! 4. Compute residuals (y − Aβ) for each region
 //!
 //! **Noise refinement:**
-//! 6. Refine noise model from LASSO residuals + gap intensities
+//! 5. Refine noise model from LASSO residuals + gap intensities
 //!
 //! **Pass 2 (selective):**
-//! 7. For composite regions where λ changed > threshold: re-run LASSO
+//! 6. For regions where λ changed > threshold: re-run LASSO
 //!    warm-started from Pass-1 β; reuse cached Aᵀy (grid unchanged)
 //!
 //! **Output:**
-//! 8. Collect all centroids; sub-grid refine LASSO centroids; sort and merge
+//! 7. Collect all centroids; sub-grid refine LASSO centroids; sort and merge
 
 use crate::basis::{build_local_a, compute_aty, BasisPrecompute};
-use crate::calibration::fit_gaussian_3pt;
 use crate::config::Config;
 use crate::io::reader::ProfileSpectrum;
 use crate::lasso::{refine_subgrid, solve_nonneg_lasso, LassoInput};
 use crate::noise::{needs_refit, refine_from_residuals, rough_noise_estimate, ResidualSample};
-use crate::signal::{detect_signal_regions, RegionClass};
+use crate::signal::detect_signal_regions;
 use ndarray::Array1;
 
 // ── Output types ──────────────────────────────────────────────────────────────
@@ -35,7 +33,7 @@ use ndarray::Array1;
 pub struct CentroidResult {
     /// Centroid m/z (sub-grid refined where possible)
     pub mz: f64,
-    /// Intensity (β coefficient from LASSO, or peak height from fast path)
+    /// Intensity (β coefficient from LASSO)
     pub intensity: f64,
 }
 
@@ -44,7 +42,6 @@ pub struct CentroidResult {
 pub struct SpectrumStats {
     pub scan_number: u32,
     pub n_regions: usize,
-    pub n_fast_path: usize,
     pub n_lasso: usize,
     pub n_pass2_refits: usize,
     pub n_centroids: usize,
@@ -110,8 +107,6 @@ pub fn centroid_spectrum(
         config.merge_gap_points,
         config.extension_points,
         config.min_region_width,
-        basis.sigma,
-        config.single_peak_width_sigma,
     );
     stats.n_regions = regions.len();
 
@@ -119,7 +114,7 @@ pub fn centroid_spectrum(
         return (Vec::new(), stats);
     }
 
-    // ── Steps 3–5: Process each region in Pass 1 ─────────────────────────────
+    // ── Steps 3–4: Process each region in Pass 1 via LASSO ─────────────────────
     let mut all_centroids: Vec<CentroidResult> = Vec::new();
     let mut residual_samples: Vec<ResidualSample> = Vec::new();
     let mut pass1_states: Vec<Pass1State> = Vec::new();
@@ -129,64 +124,24 @@ pub fn centroid_spectrum(
         let int_slice = &intensity[region.start_idx..=region.end_idx];
         let int_f64: Vec<f64> = int_slice.iter().map(|&v| v as f64).collect();
 
-        match region.classification {
-            RegionClass::SinglePeak => {
-                // Fast path: 3-point Gaussian fit
-                if let Some((center_mz, sigma_fit)) =
-                    fast_path_gaussian(mz_slice, int_slice, basis.sigma)
-                {
-                    all_centroids.push(CentroidResult {
-                        mz: center_mz,
-                        intensity: region.max_intensity as f64,
-                    });
-                    stats.n_fast_path += 1;
-                    let _ = sigma_fit; // used for validation inside fast_path_gaussian
-                } else {
-                    // Fast path failed — fall through to LASSO for this region
-                    let (centroids, state) = run_lasso_region(
-                        ridx,
-                        mz_slice,
-                        &int_f64,
-                        basis,
-                        rough_lambda,
-                        region.center_mz(),
-                        None,
-                    );
-                    all_centroids.extend(centroids);
-                    if let Some(s) = state {
-                        collect_residuals(
-                            &s,
-                            mz_slice,
-                            &int_f64,
-                            &mut residual_samples,
-                            basis.sigma,
-                        );
-                        pass1_states.push(s);
-                    }
-                    stats.n_lasso += 1;
-                }
-            }
-            RegionClass::PotentialComposite => {
-                let (centroids, state) = run_lasso_region(
-                    ridx,
-                    mz_slice,
-                    &int_f64,
-                    basis,
-                    rough_lambda,
-                    region.center_mz(),
-                    None,
-                );
-                all_centroids.extend(centroids);
-                if let Some(s) = state {
-                    collect_residuals(&s, mz_slice, &int_f64, &mut residual_samples, basis.sigma);
-                    pass1_states.push(s);
-                }
-                stats.n_lasso += 1;
-            }
+        let (centroids, state) = run_lasso_region(
+            ridx,
+            mz_slice,
+            &int_f64,
+            basis,
+            rough_lambda,
+            region.center_mz(),
+            None,
+        );
+        all_centroids.extend(centroids);
+        if let Some(s) = state {
+            collect_residuals(&s, mz_slice, &int_f64, &mut residual_samples, basis.sigma);
+            pass1_states.push(s);
         }
+        stats.n_lasso += 1;
     }
 
-    // ── Step 6: Noise refinement ──────────────────────────────────────────────
+    // ── Step 5: Noise refinement ──────────────────────────────────────────────
     let refined_noise = refine_from_residuals(
         mz,
         intensity,
@@ -197,8 +152,8 @@ pub fn centroid_spectrum(
         config.noise_step_da,
     );
 
-    // ── Step 7: Pass 2 — selective re-fit ────────────────────────────────────
-    // Re-run LASSO only for composite regions where λ changed significantly.
+    // ── Step 6: Pass 2 — selective re-fit ────────────────────────────────────
+    // Re-run LASSO only for regions where λ changed significantly.
     // Remove Pass-1 centroids for those regions; replace with Pass-2 results.
     let mut pass2_centroid_sets: Vec<(usize, Vec<CentroidResult>)> = Vec::new();
 
@@ -242,7 +197,7 @@ pub fn centroid_spectrum(
         }
     }
 
-    // ── Step 8: Sort and merge near-duplicate centroids ───────────────────────
+    // ── Step 7: Sort and merge near-duplicate centroids ───────────────────────
     all_centroids.sort_by(|a, b| a.mz.total_cmp(&b.mz));
 
     let half_grid = basis.grid_spacing / 2.0;
@@ -315,28 +270,6 @@ fn run_lasso_region(
     (centroids, Some(state))
 }
 
-/// Fast-path Gaussian fit for single-peak regions.
-/// Validates the fitted σ is within [0.5×, 1.5×] the calibrated σ.
-/// Returns `None` if the fit fails or is implausible → caller escalates to LASSO.
-fn fast_path_gaussian(mz: &[f64], intensity: &[f32], sigma_calibrated: f64) -> Option<(f64, f64)> {
-    // Find apex
-    let apex = intensity
-        .iter()
-        .enumerate()
-        .max_by(|a, b| a.1.total_cmp(b.1))
-        .map(|(i, _)| i)?;
-
-    let (center, sigma_fit) = fit_gaussian_3pt(mz, intensity, apex)?;
-
-    // Sanity check: fitted σ should be near calibrated σ
-    let ratio = sigma_fit / sigma_calibrated;
-    if !(0.4..=2.5).contains(&ratio) {
-        return None;
-    }
-
-    Some((center, sigma_fit))
-}
-
 /// Compute residuals y − Aβ for a LASSO-fitted region and add to samples.
 fn collect_residuals(
     state: &Pass1State,
@@ -406,7 +339,6 @@ mod tests {
             max_lasso_iter: 2000,
             lasso_tol: 1e-6,
             lambda_change_threshold: 0.20,
-            single_peak_width_sigma: 2.5,
             signal_threshold_sigma: 3.0,
             merge_gap_points: 2,
             extension_points: 3,
