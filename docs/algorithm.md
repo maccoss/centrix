@@ -208,6 +208,18 @@ undergoes sub-grid refinement:
 
 This recovers sub-grid precision from the discrete basis coefficients.
 
+#### Intensity as Integrated Gaussian Area
+
+The final reported intensity for each centroid is the **integrated area** of the
+fitted Gaussian, not the raw LASSO coefficient (amplitude):
+
+```
+intensity = β × σ × √(2π)
+```
+
+This matches the convention used by the Thermo onboard centroider, where centroid
+intensities represent integrated signal area rather than peak height.
+
 ### Pass 1 Output
 
 After Pass 1, the system has:

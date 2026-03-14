@@ -33,7 +33,7 @@ use ndarray::Array1;
 pub struct CentroidResult {
     /// Centroid m/z (sub-grid refined where possible)
     pub mz: f64,
-    /// Intensity (β coefficient from LASSO)
+    /// Integrated area of the fitted Gaussian: β × σ × √(2π)
     pub intensity: f64,
 }
 
@@ -251,11 +251,15 @@ fn run_lasso_region(
         return (Vec::new(), None);
     }
 
-    // Sub-grid centroid refinement
+    // Sub-grid centroid refinement; convert amplitude → integrated area
+    let area_scale = basis.sigma * std::f64::consts::TAU.sqrt();
     let centroids_raw = refine_subgrid(&output.beta, &grid);
     let centroids: Vec<CentroidResult> = centroids_raw
         .into_iter()
-        .map(|(mz, intensity)| CentroidResult { mz, intensity })
+        .map(|(mz, amplitude)| CentroidResult {
+            mz,
+            intensity: amplitude * area_scale,
+        })
         .collect();
 
     let state = Pass1State {
@@ -327,8 +331,8 @@ mod tests {
 
     fn make_config() -> Config {
         Config {
-            input: "/dev/null".into(),
-            output: "/dev/null".into(),
+            input: vec!["/dev/null".to_string()],
+            output: None,
             config: None,
             sigma_ms1: None,
             sigma_ms2: None,

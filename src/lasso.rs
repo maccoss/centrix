@@ -238,7 +238,7 @@ pub fn refine_subgrid(beta: &[f64], grid_positions: &[f64]) -> Vec<(f64, f64)> {
             grid_positions[j]
         };
 
-        // Intensity is the β coefficient (proportional to peak area)
+        // Amplitude (β coefficient); caller scales by σ√(2π) for integrated area
         centroids.push((refined_mz, beta[j]));
         j += 1;
     }

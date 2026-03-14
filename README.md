@@ -53,7 +53,14 @@ cargo build --release
 ### Run
 
 ```bash
-centrix run -i profile.mzML -o centroided.mzML
+# Single file — output is profile.centrix.mzML in the same directory
+centrix run -i profile.mzML
+
+# Multiple files via glob
+centrix run -i '*.mzML'
+
+# Explicit output directory
+centrix run -i '*.mzML' -o results/
 ```
 
 ### Tune sensitivity
@@ -63,10 +70,10 @@ To increase centroid count:
 
 ```bash
 # Moderate increase
-centrix run -i profile.mzML -o centroided.mzML --lambda-factor 1.5
+centrix run -i profile.mzML --lambda-factor 1.5
 
 # More aggressive (closer to Thermo centroider count)
-centrix run -i profile.mzML -o centroided.mzML \
+centrix run -i profile.mzML \
   --lambda-factor 1.5 --signal-threshold-sigma 2.0
 ```
 
@@ -100,13 +107,19 @@ Profile grid spacing is firmware-fixed: 1/15 Th (MS1), 1/8 Th (MS2).
 ## Output
 
 Centrix produces standard **centroided mzML** that is compatible with any mzML
-reader (ProteoWizard, DIA-NN, etc.). The output is a passthrough copy of the
-input with only the spectrum binary arrays replaced:
+reader (ProteoWizard, DIA-NN, etc.). Output files are automatically named
+`<stem>.centrix.mzML` and placed next to the input (or in the `-o` directory).
+
+The output is a passthrough copy of the input with only the spectrum binary
+arrays replaced:
 
 - Profile → centroid CV term swap
 - m/z: 64-bit float, zlib compressed
-- Intensity: 32-bit float, zlib compressed
+- Intensity: 32-bit float, zlib compressed (integrated Gaussian area)
 - Index and SHA-1 checksum regenerated
+
+Centroid intensities are the **integrated area** of each fitted Gaussian
+(β × σ × √(2π)), matching the convention used by the Thermo onboard centroider.
 
 All non-spectrum content (metadata, chromatograms, etc.) is preserved
 byte-for-byte. See [docs/io-format.md](docs/io-format.md) for format details.

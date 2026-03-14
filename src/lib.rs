@@ -12,24 +12,109 @@ pub mod signal;
 pub use config::Config;
 pub use error::{CentrixError, Result};
 
+/// Expand glob patterns in `config.input` into concrete file paths.
+fn resolve_input_files(patterns: &[String]) -> Result<Vec<std::path::PathBuf>> {
+    let mut files = Vec::new();
+    for pattern in patterns {
+        let paths: Vec<_> = glob::glob(pattern)
+            .map_err(|e| CentrixError::Config(format!("Invalid glob pattern '{pattern}': {e}")))?
+            .collect();
+        if paths.is_empty() {
+            return Err(CentrixError::Config(format!(
+                "No files matched pattern '{pattern}'"
+            )));
+        }
+        let mut matched = false;
+        for entry in paths {
+            let path = entry.map_err(|e| CentrixError::Io(e.into_error()))?;
+            files.push(path);
+            matched = true;
+        }
+        if !matched {
+            return Err(CentrixError::Config(format!(
+                "No files matched pattern '{pattern}'"
+            )));
+        }
+    }
+    if files.is_empty() {
+        return Err(CentrixError::Config("No input files specified".to_string()));
+    }
+    Ok(files)
+}
+
+/// Derive output path: `<output_dir>/<stem>.centrix.mzML`.
+/// If `output_dir` is None, the output goes next to the input file.
+fn derive_output_path(
+    input: &std::path::Path,
+    output_dir: Option<&std::path::Path>,
+) -> std::path::PathBuf {
+    let stem = input.file_stem().unwrap_or_default();
+    let filename = format!("{}.centrix.mzML", stem.to_string_lossy());
+    match output_dir {
+        Some(dir) => dir.join(filename),
+        None => input.with_file_name(filename),
+    }
+}
+
 /// Run the centroiding pipeline with the given configuration.
 pub fn run(config: &Config) -> Result<()> {
+    let input_files = resolve_input_files(&config.input)?;
+    let n_files = input_files.len();
+
+    if n_files > 1 {
+        log::info!(
+            "centrix {}: processing {} files",
+            env!("CARGO_PKG_VERSION"),
+            n_files
+        );
+    }
+
+    // Create output directory if specified and doesn't exist
+    if let Some(ref dir) = config.output {
+        std::fs::create_dir_all(dir).map_err(CentrixError::Io)?;
+    }
+
+    for (file_idx, input_path) in input_files.iter().enumerate() {
+        let output_path = derive_output_path(input_path, config.output.as_deref());
+
+        if n_files > 1 {
+            log::info!(
+                "[{}/{}] {} -> {}",
+                file_idx + 1,
+                n_files,
+                input_path.display(),
+                output_path.display()
+            );
+        } else {
+            log::info!(
+                "centrix {}: {} -> {}",
+                env!("CARGO_PKG_VERSION"),
+                input_path.display(),
+                output_path.display()
+            );
+        }
+
+        run_single_file(input_path, &output_path, config)?;
+    }
+
+    Ok(())
+}
+
+/// Process a single input mzML file through the centroiding pipeline.
+fn run_single_file(
+    input_path: &std::path::Path,
+    output_path: &std::path::Path,
+    config: &Config,
+) -> Result<()> {
     use indicatif::{ProgressBar, ProgressStyle};
     use rayon::prelude::*;
-
-    log::info!(
-        "centrix {}: {} -> {}",
-        env!("CARGO_PKG_VERSION"),
-        config.input.display(),
-        config.output.display()
-    );
 
     // Calibration pass
     log::info!(
         "Loading {} spectra for calibration...",
         config.n_calibration_spectra
     );
-    let cal_spectra = io::reader::load_first_n(&config.input, config.n_calibration_spectra)?;
+    let cal_spectra = io::reader::load_first_n(input_path, config.n_calibration_spectra)?;
 
     let cal = calibration::calibrate(
         &cal_spectra,
@@ -60,8 +145,8 @@ pub fn run(config: &Config) -> Result<()> {
         config.lambda_factor,
     );
 
-    let mut writer = io::PassthroughWriter::new(&config.input, &config.output)?;
-    let reader = io::reader::ProfileReader::open(&config.input)?;
+    let mut writer = io::PassthroughWriter::new(input_path, output_path)?;
+    let reader = io::reader::ProfileReader::open(input_path)?;
 
     // Progress bar
     let total = reader.spectrum_count_hint().unwrap_or(0);
@@ -314,8 +399,8 @@ pub fn run_centroid_test(path: &std::path::Path, n: usize, n_cal: usize) -> Resu
     let basis_ms2 = basis::BasisPrecompute::new(sigma_ms2, cal.grid_spacing_ms2, 0.0, 3.0);
 
     let config = Config {
-        input: path.to_path_buf(),
-        output: path.to_path_buf(),
+        input: vec![path.to_string_lossy().into_owned()],
+        output: None,
         config: None,
         sigma_ms1: None,
         sigma_ms2: None,

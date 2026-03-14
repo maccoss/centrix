@@ -8,10 +8,13 @@ etc.) use auto-detection when not specified.
 
 ```bash
 # CLI flags
-centrix run -i input.mzML -o output.mzML --lambda-factor 1.5
+centrix run -i input.mzML --lambda-factor 1.5
+
+# Multiple files / glob patterns
+centrix run -i '*.mzML' -o results/ --lambda-factor 1.5
 
 # YAML config file (CLI args override file values)
-centrix run -i input.mzML -o output.mzML --config params.yaml
+centrix run -i input.mzML --config params.yaml
 ```
 
 Example YAML config:
@@ -27,8 +30,8 @@ noise_window_da: 20.0
 
 | Flag | YAML Key | Default | Description |
 |------|----------|---------|-------------|
-| `-i, --input` | `input` | *required* | Input profile-mode mzML file |
-| `-o, --output` | `output` | *required* | Output centroided mzML file |
+| `-i, --input` | `input` | *required* | Input profile-mode mzML file(s) or glob patterns. Accepts multiple values. |
+| `-o, --output` | `output` | same as input | Output directory. Output files are named `<stem>.centrix.mzML`. If omitted, output is placed next to each input file. |
 | `--config` | — | none | Path to YAML config file |
 | `--stats-output` | `stats_output` | none | Path for per-spectrum TSV statistics |
 

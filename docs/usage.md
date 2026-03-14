@@ -41,46 +41,51 @@ Centrix has four subcommands:
 ## Full Pipeline
 
 ```bash
-centrix run -i input.mzML -o output.mzML
+# Single file — output is input.centrix.mzML in the same directory
+centrix run -i input.mzML
+
+# Multiple files via glob
+centrix run -i '*.mzML'
+
+# Explicit output directory
+centrix run -i '*.mzML' -o results/
 ```
 
 This runs the complete pipeline: calibration → two-pass centroiding → mzML output.
+Output files are automatically named `<stem>.centrix.mzML` and placed next to the
+input file (or in the `-o` directory if specified).
 
 ### With custom parameters
 
 ```bash
-centrix run \
-  -i input.mzML \
-  -o output.mzML \
-  --lambda-factor 1.5 \
-  --signal-threshold-sigma 2.0
+centrix run -i input.mzML --lambda-factor 1.5 --signal-threshold-sigma 2.0
 ```
 
 ### With a YAML config file
 
 ```bash
-centrix run -i input.mzML -o output.mzML --config params.yaml
+centrix run -i input.mzML --config params.yaml
 ```
 
 ### Controlling thread count
 
 ```bash
 # Use 8 threads
-centrix run -i input.mzML -o output.mzML --threads 8
+centrix run -i input.mzML --threads 8
 
 # Use all available cores (default)
-centrix run -i input.mzML -o output.mzML --threads 0
+centrix run -i input.mzML --threads 0
 ```
 
 ### Verbose logging
 
 ```bash
-RUST_LOG=debug centrix run -i input.mzML -o output.mzML
+RUST_LOG=debug centrix run -i input.mzML
 ```
 
 Or for info-level:
 ```bash
-RUST_LOG=info centrix run -i input.mzML -o output.mzML
+RUST_LOG=info centrix run -i input.mzML
 ```
 
 ---
@@ -153,9 +158,7 @@ This is useful for:
 
 ```bash
 # Run Centrix on profile data
-centrix run \
-  -i data/profile.mzML \
-  -o data/profile.centrix.mzML
+centrix run -i data/profile.mzML
 
 # Open both in SeeMS or another viewer
 # - data/profile.mzML (profile input)
@@ -174,11 +177,8 @@ centrix centroid-test --input data/profile.mzML --n 200 \
   -- --lambda-factor 1.5
 
 # 3. Full run with tuned parameters
-centrix run \
-  -i data/profile.mzML \
-  -o data/profile.centrix.mzML \
-  --lambda-factor 1.5 \
-  --signal-threshold-sigma 2.0
+centrix run -i data/profile.mzML \
+  --lambda-factor 1.5 --signal-threshold-sigma 2.0
 ```
 
 ### Verify calibration
@@ -188,21 +188,27 @@ centrix run \
 centrix calibrate --input data/profile.mzML
 
 # If auto-calibration is wrong, override
-centrix run \
-  -i data/profile.mzML \
-  -o data/profile.centrix.mzML \
-  --sigma-ms1 0.255 \
-  --sigma-ms2 0.340
+centrix run -i data/profile.mzML \
+  --sigma-ms1 0.255 --sigma-ms2 0.340
 ```
 
 ### Batch processing
 
+Centrix natively supports multiple input files and glob patterns:
+
 ```bash
-for f in data/profile/*.mzML; do
-  out="data/centroided/$(basename "$f" .mzML).centrix.mzML"
-  centrix run -i "$f" -o "$out" --lambda-factor 1.5
-done
+# Process all files in a directory
+centrix run -i 'data/profile/*.mzML'
+
+# Multiple files with explicit output directory
+centrix run -i 'data/profile/*.mzML' -o data/centroided/ \
+  --lambda-factor 1.5
+
+# Multiple individual files
+centrix run -i file1.mzML file2.mzML file3.mzML
 ```
+
+Output files are automatically named `<stem>.centrix.mzML`.
 
 ---
 

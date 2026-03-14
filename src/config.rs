@@ -57,13 +57,14 @@ mod defaults {
 #[derive(Debug, Clone, Parser, Serialize, Deserialize)]
 #[command(version, about, long_about = None)]
 pub struct Config {
-    /// Input profile-mode mzML file
-    #[arg(short, long)]
-    pub input: PathBuf,
+    /// Input profile-mode mzML file(s) or glob patterns (e.g. *.mzML)
+    #[arg(short, long, required = true, num_args = 1..)]
+    pub input: Vec<String>,
 
-    /// Output centroided mzML file
+    /// Output directory (default: same directory as each input file).
+    /// Output files are named <stem>.centrix.mzML.
     #[arg(short, long)]
-    pub output: PathBuf,
+    pub output: Option<PathBuf>,
 
     /// YAML config file (CLI args override)
     #[arg(long)]
