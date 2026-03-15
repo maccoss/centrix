@@ -33,7 +33,7 @@ use ndarray::Array1;
 pub struct CentroidResult {
     /// Centroid m/z (sub-grid refined where possible)
     pub mz: f64,
-    /// Integrated area of the fitted Gaussian: β × σ × √(2π)
+    /// Integrated area (discrete sum convention): β × σ × √(2π) / h
     pub intensity: f64,
 }
 
@@ -54,9 +54,7 @@ pub struct SpectrumStats {
 struct Pass1State {
     region_idx: usize,
     beta: Vec<f64>,
-    // Cached Aᵀy from Pass 1: reusable in Pass 2 if the grid doesn't change.
-    // Currently Pass 2 recomputes it (it's fast). Reserved for future optimization.
-    #[allow(dead_code)]
+    /// Cached Aᵀy from Pass 1: reused in Pass 2 (grid doesn't change).
     aty: Array1<f64>,
     grid: Vec<f64>,
     rough_lambda: f64,
@@ -124,7 +122,7 @@ pub fn centroid_spectrum(
         let int_slice = &intensity[region.start_idx..=region.end_idx];
         let int_f64: Vec<f64> = int_slice.iter().map(|&v| v as f64).collect();
 
-        let (centroids, state) = run_lasso_region(
+        let (centroids, state, residual) = run_lasso_region(
             ridx,
             mz_slice,
             &int_f64,
@@ -134,8 +132,10 @@ pub fn centroid_spectrum(
             None,
         );
         all_centroids.extend(centroids);
+        if let Some(r) = residual {
+            residual_samples.push(r);
+        }
         if let Some(s) = state {
-            collect_residuals(&s, mz_slice, &int_f64, &mut residual_samples, basis.sigma);
             pass1_states.push(s);
         }
         stats.n_lasso += 1;
@@ -166,20 +166,37 @@ pub fn centroid_spectrum(
             refined_lambda,
             config.lambda_change_threshold,
         ) {
-            let mz_slice = &mz[region.start_idx..=region.end_idx];
-            let int_slice = &intensity[region.start_idx..=region.end_idx];
-            let int_f64: Vec<f64> = int_slice.iter().map(|&v| v as f64).collect();
+            // Reuse cached Aᵀy from Pass 1 — grid doesn't change, only λ does
+            let aty_slice = match state.aty.as_slice() {
+                Some(s) => s,
+                None => continue,
+            };
 
-            let (centroids, _) = run_lasso_region(
-                state.region_idx,
-                mz_slice,
-                &int_f64,
-                basis,
-                refined_lambda,
-                region.center_mz(),
-                Some(&state.beta), // warm start from Pass 1
-            );
-            pass2_centroid_sets.push((state.region_idx, centroids));
+            let input = LassoInput {
+                aty: aty_slice,
+                gram_row: &basis.gram_row,
+                lambda: refined_lambda,
+                warm_start: Some(&state.beta),
+                max_iter: 2000,
+                tol: 1e-6,
+            };
+            let output = solve_nonneg_lasso(&input);
+
+            if output.n_nonzero() > 0 {
+                let area_scale =
+                    basis.sigma * std::f64::consts::TAU.sqrt() / basis.grid_spacing;
+                let centroids_raw = refine_subgrid(&output.beta, &state.grid);
+                let centroids: Vec<CentroidResult> = centroids_raw
+                    .into_iter()
+                    .map(|(mz, amplitude)| CentroidResult {
+                        mz,
+                        intensity: amplitude * area_scale,
+                    })
+                    .collect();
+                pass2_centroid_sets.push((state.region_idx, centroids));
+            } else {
+                pass2_centroid_sets.push((state.region_idx, Vec::new()));
+            }
             stats.n_pass2_refits += 1;
         }
     }
@@ -198,10 +215,15 @@ pub fn centroid_spectrum(
     }
 
     // ── Step 7: Sort and merge near-duplicate centroids ───────────────────────
+    // Merge centroids closer than σ — two Gaussians separated by less than σ
+    // are physically unresolvable at 2 pts/σ sampling (MS2). The previous
+    // threshold of grid_spacing/2 was too permissive and allowed the LASSO to
+    // split a single peak into two adjacent grid-point coefficients that
+    // survived as spurious close doublets.
     all_centroids.sort_by(|a, b| a.mz.total_cmp(&b.mz));
 
-    let half_grid = basis.grid_spacing / 2.0;
-    let merged = merge_nearby_centroids(all_centroids, half_grid);
+    let min_sep = config.min_centroid_separation.unwrap_or(basis.sigma);
+    let merged = merge_nearby_centroids(all_centroids, min_sep);
     stats.n_centroids = merged.len();
 
     (merged, stats)
@@ -209,7 +231,8 @@ pub fn centroid_spectrum(
 
 // ── LASSO region processing ───────────────────────────────────────────────────
 
-/// Run LASSO on a signal region slice. Returns centroids and optional Pass-1 state.
+/// Run LASSO on a signal region slice. Returns centroids, optional Pass-1 state,
+/// and optional residual sample (computed using the A matrix before it's dropped).
 fn run_lasso_region(
     region_idx: usize,
     mz_slice: &[f64],
@@ -218,22 +241,22 @@ fn run_lasso_region(
     lambda: f64,
     center_mz: f64,
     warm_start: Option<&[f64]>,
-) -> (Vec<CentroidResult>, Option<Pass1State>) {
+) -> (Vec<CentroidResult>, Option<Pass1State>, Option<ResidualSample>) {
     if mz_slice.len() < 2 {
-        return (Vec::new(), None);
+        return (Vec::new(), None, None);
     }
 
     // Build grid matching the data points (square system)
     let grid = basis.grid_positions(mz_slice[0], *mz_slice.last().unwrap());
     if grid.is_empty() {
-        return (Vec::new(), None);
+        return (Vec::new(), None, None);
     }
 
     let a = build_local_a(mz_slice, &grid, basis.sigma);
     let aty = compute_aty(&a, int_f64);
     let aty_slice = match aty.as_slice() {
         Some(s) => s,
-        None => return (Vec::new(), None),
+        None => return (Vec::new(), None, None),
     };
 
     let gram_row = &basis.gram_row;
@@ -248,11 +271,22 @@ fn run_lasso_region(
     let output = solve_nonneg_lasso(&input);
 
     if output.n_nonzero() == 0 {
-        return (Vec::new(), None);
+        return (Vec::new(), None, None);
     }
 
+    // Compute residuals using A before it's dropped (avoids redundant rebuild)
+    let a_beta = a.dot(&Array1::from_vec(output.beta.clone()));
+    let residuals: Vec<f64> = int_f64
+        .iter()
+        .zip(a_beta.iter())
+        .map(|(y, ab)| y - ab)
+        .collect();
+    let mz_center = (mz_slice[0] + mz_slice[mz_slice.len() - 1]) / 2.0;
+    let residual_sample = ResidualSample { mz_center, residuals };
+
     // Sub-grid centroid refinement; convert amplitude → integrated area
-    let area_scale = basis.sigma * std::f64::consts::TAU.sqrt();
+    // Discrete sum convention: β × σ√(2π) / h, matching Thermo centroider output
+    let area_scale = basis.sigma * std::f64::consts::TAU.sqrt() / basis.grid_spacing;
     let centroids_raw = refine_subgrid(&output.beta, &grid);
     let centroids: Vec<CentroidResult> = centroids_raw
         .into_iter()
@@ -271,30 +305,7 @@ fn run_lasso_region(
     };
 
     let _ = center_mz; // used by caller for noise lookup
-    (centroids, Some(state))
-}
-
-/// Compute residuals y − Aβ for a LASSO-fitted region and add to samples.
-fn collect_residuals(
-    state: &Pass1State,
-    mz_slice: &[f64],
-    int_f64: &[f64],
-    samples: &mut Vec<ResidualSample>,
-    sigma: f64,
-) {
-    let a = build_local_a(mz_slice, &state.grid, sigma);
-    let a_beta = a.dot(&Array1::from_vec(state.beta.clone()));
-    let residuals: Vec<f64> = int_f64
-        .iter()
-        .zip(a_beta.iter())
-        .map(|(y, ab)| y - ab)
-        .collect();
-
-    let mz_center = (mz_slice[0] + mz_slice[mz_slice.len() - 1]) / 2.0;
-    samples.push(ResidualSample {
-        mz_center,
-        residuals,
-    });
+    (centroids, Some(state), Some(residual_sample))
 }
 
 /// Merge centroids that are within `half_grid` of each other by intensity-weighted average.
@@ -349,6 +360,7 @@ mod tests {
             min_region_width: 3,
             noise_window_da: 20.0,
             noise_step_da: 5.0,
+            min_centroid_separation: None,
             threads: 0,
             stats_output: None,
             quiet: false,
@@ -485,4 +497,80 @@ mod tests {
             centroids.len()
         );
     }
-}
+    #[test]
+    fn close_doublet_merged_into_single_centroid() {
+        // A peak centered between two grid points should produce ONE centroid,
+        // not a doublet at adjacent grid positions.
+        let sigma = 0.340f64;
+        let spacing = 0.125f64;
+        // Place peak at a grid midpoint to maximize doublet splitting
+        let center = 500.0625f64;
+        let amplitude = 10000.0f64;
+
+        let spectrum =
+            synthetic_spectrum(494.0, spacing, 160, &[(center, amplitude)], sigma, 5.0);
+        let basis = make_basis(sigma, spacing);
+        let config = make_config();
+
+        let (centroids, _) = centroid_spectrum(&spectrum, &basis, &config);
+
+        // Find centroids near the true center
+        let nearby: Vec<_> = centroids
+            .iter()
+            .filter(|c| (c.mz - center).abs() < 1.0)
+            .collect();
+
+        assert_eq!(
+            nearby.len(),
+            1,
+            "single peak at grid midpoint should produce 1 centroid, not {}; \
+             positions: {:?}",
+            nearby.len(),
+            nearby.iter().map(|c| c.mz).collect::<Vec<_>>()
+        );
+        // Merged centroid should be close to the true center
+        assert!(
+            (nearby[0].mz - center).abs() < spacing,
+            "merged centroid at {:.4} should be within one grid spacing of {:.4}",
+            nearby[0].mz,
+            center
+        );
+    }
+
+    #[test]
+    fn well_separated_peaks_preserved() {
+        // Two peaks separated by > σ should remain as two distinct centroids.
+        let sigma = 0.340f64;
+        let spacing = 0.125f64;
+        let c1 = 500.0f64;
+        let c2 = 500.625f64; // 0.625 Th apart = 1.84σ
+        let amplitude = 10000.0f64;
+
+        let spectrum = synthetic_spectrum(
+            494.0,
+            spacing,
+            160,
+            &[(c1, amplitude), (c2, amplitude)],
+            sigma,
+            5.0,
+        );
+        let basis = make_basis(sigma, spacing);
+        let config = make_config();
+
+        let (centroids, _) = centroid_spectrum(&spectrum, &basis, &config);
+
+        let near_c1: Vec<_> = centroids
+            .iter()
+            .filter(|c| (c.mz - c1).abs() < 0.2)
+            .collect();
+        let near_c2: Vec<_> = centroids
+            .iter()
+            .filter(|c| (c.mz - c2).abs() < 0.2)
+            .collect();
+
+        assert!(
+            !near_c1.is_empty() && !near_c2.is_empty(),
+            "two peaks 1.84σ apart should both be preserved; centroids: {:?}",
+            centroids.iter().map(|c| c.mz).collect::<Vec<_>>()
+        );
+    }}

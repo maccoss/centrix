@@ -148,6 +148,14 @@ pub struct Config {
     #[serde(default = "defaults::noise_step_da")]
     pub noise_step_da: f64,
 
+    /// Minimum separation (Da) between output centroids. Centroids closer than
+    /// this are merged by intensity-weighted averaging. Default: σ (calibrated
+    /// per MS level). Two Gaussians separated by less than σ are physically
+    /// unresolvable at the Stellar's sampling density.
+    #[arg(long)]
+    #[serde(default)]
+    pub min_centroid_separation: Option<f64>,
+
     // --- Performance ---
     /// Number of threads (0 = use all available)
     #[arg(long, default_value_t = 0)]

@@ -113,6 +113,7 @@ pub fn solve_nonneg_lasso(input: &LassoInput<'_>) -> LassoOutput {
 
     let mut converged = false;
     let mut n_iter = 0u32;
+    let mut active_swap: Vec<usize> = Vec::with_capacity(active.len());
 
     'outer: for iter in 0..input.max_iter {
         n_iter = iter as u32 + 1;
@@ -133,7 +134,7 @@ pub fn solve_nonneg_lasso(input: &LassoInput<'_>) -> LassoOutput {
 
         // Coordinate descent sweep over active set
         let mut max_delta = 0.0f64;
-        let mut new_active = Vec::with_capacity(active.len());
+        active_swap.clear();
 
         for &j in &active {
             let rho = compute_rho(j, &beta, input.aty, input.gram_row);
@@ -146,12 +147,12 @@ pub fn solve_nonneg_lasso(input: &LassoInput<'_>) -> LassoOutput {
 
             // Keep variable active if β > 0 or it could become non-zero
             if beta_new > 0.0 || rho > lambda {
-                new_active.push(j);
+                active_swap.push(j);
             } else {
                 is_active[j] = false;
             }
         }
-        active = new_active;
+        std::mem::swap(&mut active, &mut active_swap);
 
         if max_delta < input.tol {
             converged = true;
@@ -238,7 +239,7 @@ pub fn refine_subgrid(beta: &[f64], grid_positions: &[f64]) -> Vec<(f64, f64)> {
             grid_positions[j]
         };
 
-        // Amplitude (β coefficient); caller scales by σ√(2π) for integrated area
+        // Amplitude (β coefficient); caller scales by σ√(2π)/h for integrated area
         centroids.push((refined_mz, beta[j]));
         j += 1;
     }

@@ -100,10 +100,10 @@ For each spectrum:
 
 **Intensity precision change**: the output intensity array is 32-bit float (4
 bytes/value) instead of the input's 64-bit float. This is scientifically
-appropriate — the centroid intensities represent integrated Gaussian area
-(β × σ × √(2π)), not raw detector counts, and 32-bit float provides ~7
-significant digits, more than sufficient. This matches the convention used by
-the Thermo onboard centroider.
+appropriate — the centroid intensities represent the discrete sum of the fitted
+Gaussian (β × σ × √(2π) / h, where h is the profile grid spacing), not raw
+detector counts, and 32-bit float provides ~7 significant digits, more than
+sufficient. This matches the convention used by the Thermo onboard centroider.
 
 ### What Is Preserved Unchanged
 

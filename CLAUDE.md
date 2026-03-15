@@ -74,8 +74,23 @@ typical σ/grid-spacing ratios).
 path. The coordinate descent inner loop uses gram_row scalars directly — BLAS overhead
 would exceed computation cost for the 2-5 variable active set typical in these spectra.
 
+### BLAS Must Be Single-Threaded (CRITICAL)
+OpenBLAS (and MKL) spawn their own internal thread pools by default, sized to the
+number of CPU cores. For Centrix this is catastrophic: every dgemv call on a tiny
+8×8 to 22×22 matrix triggers thread synchronization that costs orders of magnitude
+more than the actual computation. On a 10-core machine this inflated `sys` time
+from 6s to 150+ minutes (>1500× overhead).
+
+**Fix:** `main.rs` calls `openblas_set_num_threads(1)` (or `mkl_set_num_threads(1)`
+for the MKL feature) via FFI at startup. Rayon handles spectrum-level parallelism;
+BLAS must not compete with its own thread pool.
+
+**DO NOT REMOVE THIS.** If you see poor performance or massive `sys` time, check
+that the BLAS single-threading call is still present in `main.rs`.
+
 ### Two-Pass Design
-- Pass 1: rough noise → detect regions → single-peak fast path or LASSO → collect residuals
+- Pass 1: rough noise → detect regions → LASSO all regions → compute residuals inline
+- Residuals are computed using the A matrix before it's dropped (avoids redundant rebuild)
 - Noise refinement: LASSO residuals + gap intensities → smooth noise model per m/z
 - Pass 2: re-run LASSO only on regions where λ changed >20%, warm-started from Pass 1 β
 - Aᵀy is cached and reused in Pass 2 (grid doesn't change between passes, only λ changes)
@@ -89,9 +104,9 @@ quick-xml streaming mode: pass all XML events byte-for-byte except spectrum bina
 arrays. `ByteCountingWriter<W>` wrapper tracks byte offsets for index regeneration.
 Regenerates `<indexList>`, `<indexListOffset>`, and SHA-1 `<fileChecksum>` at end.
 
-### Thread-Local Work Buffers
-Each rayon thread owns a `thread_local! WorkBuffer` with pre-allocated `Vec<f64>`
-scratch space. Avoids heap allocation in the per-spectrum hot path.
+### Compile Flags
+`.cargo/config.toml` sets `-C target-cpu=native` for better auto-vectorization
+of exp() calls in the basis matrix construction.
 
 ## Dependencies (match Osprey versions exactly)
 

@@ -114,6 +114,15 @@ These control the sliding-window noise refinement after Pass 1.
 | `--noise-window-da` | `noise_window_da` | 20.0 | Width of noise estimation window in Da. |
 | `--noise-step-da` | `noise_step_da` | 5.0 | Step size between noise estimation windows in Da. |
 
+### Centroid Merging
+
+After LASSO centroiding, nearby centroids are merged to prevent spurious
+close doublets (see [Algorithm § Step 7](algorithm.md#step-7-sort-and-merge)).
+
+| Flag | YAML Key | Default | Description |
+|------|----------|---------|-------------|
+| `--min-centroid-separation` | `min_centroid_separation` | σ (auto) | Minimum m/z separation (Da) between output centroids. Centroids closer than this are merged by intensity-weighted averaging. Default is the calibrated Gaussian σ for the MS level (~0.25 Da for MS2, ~0.17 Da for MS1). Set to 0 to disable merging. |
+
 ---
 
 ## Runtime Parameters

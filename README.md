@@ -118,8 +118,9 @@ arrays replaced:
 - Intensity: 32-bit float, zlib compressed (integrated Gaussian area)
 - Index and SHA-1 checksum regenerated
 
-Centroid intensities are the **integrated area** of each fitted Gaussian
-(β × σ × √(2π)), matching the convention used by the Thermo onboard centroider.
+Centroid intensities are the **discrete sum** of each fitted Gaussian
+(β × σ × √(2π) / h, where h is the profile grid spacing), matching the
+convention used by the Thermo onboard centroider.
 
 All non-spectrum content (metadata, chromatograms, etc.) is preserved
 byte-for-byte. See [docs/io-format.md](docs/io-format.md) for format details.
@@ -132,6 +133,16 @@ byte-for-byte. See [docs/io-format.md](docs/io-format.md) for format details.
 - Active-set LASSO: typical active set of 2–5 variables
 - BLAS only for Aᵀy (dgemv); coordinate descent uses scalars directly
 - Streaming I/O: constant memory regardless of file size
+- **BLAS forced to single-threaded** via `openblas_set_num_threads(1)` at startup —
+  BLAS operations are on tiny matrices (8×8 to 22×22) where the internal thread-pool
+  synchronization overhead is orders of magnitude larger than the computation itself.
+  Rayon handles all parallelism at the spectrum level.
+- Compiled with `-C target-cpu=native` for auto-vectorized exp() in basis matrix
+  construction
+- Pass 2 reuses cached Aᵀy from Pass 1 (grid unchanged, only λ changes)
+- Physics-based centroid merging: centroids closer than σ are merged to prevent
+  spurious close doublets from LASSO grid splitting (configurable via
+  `--min-centroid-separation`)
 
 ## Building with MKL
 

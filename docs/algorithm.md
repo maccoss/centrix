@@ -210,15 +210,16 @@ This recovers sub-grid precision from the discrete basis coefficients.
 
 #### Intensity as Integrated Gaussian Area
 
-The final reported intensity for each centroid is the **integrated area** of the
-fitted Gaussian, not the raw LASSO coefficient (amplitude):
+The final reported intensity for each centroid is the **discrete sum** of the
+fitted Gaussian across profile data points, not the raw LASSO coefficient:
 
 ```
-intensity = β × σ × √(2π)
+intensity = β × σ × √(2π) / h
 ```
 
-This matches the convention used by the Thermo onboard centroider, where centroid
-intensities represent integrated signal area rather than peak height.
+where h is the profile grid spacing. This is equivalent to summing the fitted
+Gaussian values at each data point, matching the convention used by the Thermo
+onboard centroider.
 
 ### Pass 1 Output
 
@@ -255,9 +256,10 @@ fractional change exceeds `lambda_change_threshold` (default 20%):
 the LASSO is re-run for that region, **warm-started** from the Pass 1 β. Warm
 starting typically converges in <10 iterations (vs ~50–200 cold-start).
 
-The Aᵀy vector is recomputed (the grid doesn't change between passes, so this
-could be cached — reserved for future optimization). Pass 2 centroids replace
-Pass 1 centroids for the affected m/z range.
+The Aᵀy vector is cached from Pass 1 and reused directly (the grid doesn't change
+between passes, only λ changes). This avoids rebuilding the design matrix A and
+recomputing the matrix-vector product. Pass 2 centroids replace Pass 1 centroids
+for the affected m/z range.
 
 Regions where λ didn't change significantly retain their Pass 1 centroids
 unmodified.
@@ -265,12 +267,29 @@ unmodified.
 ## Step 7: Sort and Merge
 
 All centroids (from Pass 1 regions not refit and Pass 2 refit regions) are
-collected, sorted by m/z, and merged:
+collected, sorted by m/z, and merged.
 
-- Centroids within `grid_spacing / 2` of each other are merged via
-  intensity-weighted m/z averaging
-- This handles edge cases where adjacent regions produce duplicate centroids at
-  region boundaries
+### Minimum separation (σ-based merging)
+
+Centroids closer than a minimum separation threshold are merged via
+intensity-weighted m/z averaging (summing their intensities). The default
+threshold is **σ** — the calibrated Gaussian peak width for the MS level.
+
+This is necessary because the LASSO basis grid is placed at the ADC data point
+positions (0.125 Th for MS2, ~0.067 Th for MS1). When a true peak center falls
+between two grid points, the LASSO solver may assign non-zero coefficients to
+both adjacent grid positions, producing a spurious "close doublet" — two
+centroids separated by one grid spacing that actually represent a single ion.
+
+Two Gaussians with the same σ separated by less than σ are physically
+indistinguishable at the Stellar's sampling density (~2 data points per σ for
+MS2). The intensity-weighted merge naturally recovers the correct centroid
+position:
+
+$$m/z_{\text{merged}} = \frac{m/z_1 \cdot I_1 + m/z_2 \cdot I_2}{I_1 + I_2}, \quad I_{\text{merged}} = I_1 + I_2$$
+
+The threshold is configurable via `--min-centroid-separation <DA>` for
+non-standard instruments or analytes. Setting it to 0 disables merging entirely.
 
 ## Parallelism
 
@@ -284,3 +303,19 @@ Centrix uses **batched rayon parallelism**:
 The `BasisPrecompute` structures (one per MS level) are read-only and shared
 across all threads. Each thread operates on its own spectrum data with no
 synchronization overhead.
+
+### BLAS Threading (Critical)
+
+Centrix uses BLAS only for the Aᵀy computation (`a.t().dot(y)`, dispatched as
+`dgemv`). The design matrices are tiny: 8×8 for MS2 and up to ~22×22 for MS1.
+
+OpenBLAS (and MKL) spawn internal thread pools sized to the number of CPU cores
+by default. For these tiny matrices, the thread synchronization overhead is
+catastrophic — on a 10-core machine, `sys` time inflated from 6 seconds to 150+
+minutes (>1500× overhead), roughly doubling wall-clock time.
+
+Centrix forces BLAS to single-threaded mode via FFI calls at startup
+(`openblas_set_num_threads(1)` or `mkl_set_num_threads(1)`). All parallelism is
+handled by Rayon at the spectrum level, where the work units are large enough to
+amortize scheduling overhead. BLAS must never compete with its own internal
+thread pool.

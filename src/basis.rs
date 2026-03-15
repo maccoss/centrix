@@ -140,7 +140,7 @@ pub fn build_local_a(mz: &[f64], grid: &[f64], sigma: f64) -> Array2<f64> {
 ///
 /// This is the dominant per-region BLAS call.
 pub fn compute_aty(a: &Array2<f64>, y: &[f64]) -> Array1<f64> {
-    let y_arr = Array1::from_vec(y.to_vec());
+    let y_arr = ndarray::ArrayView1::from(y);
     a.t().dot(&y_arr)
 }
 

@@ -3,6 +3,19 @@ use centrix::Config;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+// Force BLAS to single-threaded mode via FFI. Centrix uses rayon for
+// spectrum-level parallelism; BLAS operations are on tiny matrices (8×8 to 22×22)
+// where the BLAS internal thread-pool overhead far exceeds the computation cost.
+#[cfg(feature = "openblas")]
+extern "C" {
+    fn openblas_set_num_threads(num_threads: std::ffi::c_int);
+}
+
+#[cfg(feature = "mkl")]
+extern "C" {
+    fn mkl_set_num_threads(num_threads: std::ffi::c_int);
+}
+
 #[derive(Parser)]
 #[command(
     name = "centrix",
@@ -51,6 +64,16 @@ enum Command {
 }
 
 fn main() -> anyhow::Result<()> {
+    // Force BLAS to single-threaded mode at runtime.
+    #[cfg(feature = "openblas")]
+    unsafe {
+        openblas_set_num_threads(1);
+    }
+    #[cfg(feature = "mkl")]
+    unsafe {
+        mkl_set_num_threads(1);
+    }
+
     let cli = Cli::parse();
 
     match cli.command {

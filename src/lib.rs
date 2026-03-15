@@ -417,6 +417,7 @@ pub fn run_centroid_test(path: &std::path::Path, n: usize, n_cal: usize) -> Resu
         min_region_width: 3,
         noise_window_da: 20.0,
         noise_step_da: 5.0,
+        min_centroid_separation: None,
         threads: 0,
         stats_output: None,
         quiet: false,
