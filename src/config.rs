@@ -2,6 +2,76 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Thermo LIT scan rate selector.
+///
+/// Maps single-letter filter codes (n/r/t/u) to known σ and grid spacing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScanRate {
+    Normal,  // n — 33 kTh/s, σ = 0.212, grid = 1/30
+    Rapid,   // r — 67 kTh/s, σ = 0.255, grid = 1/15
+    Turbo,   // t — 125 kTh/s, σ = 0.340, grid = 1/8
+    Ultra,   // u — 200 kTh/s, σ = 0.849
+}
+
+impl ScanRate {
+    /// Gaussian σ in m/z for this scan rate.
+    pub fn sigma(self) -> f64 {
+        match self {
+            ScanRate::Normal => 0.212,
+            ScanRate::Rapid => 0.255,
+            ScanRate::Turbo => 0.340,
+            ScanRate::Ultra => 0.849,
+        }
+    }
+
+    /// Grid spacing in m/z (None if unknown).
+    pub fn grid_spacing(self) -> Option<f64> {
+        match self {
+            ScanRate::Normal => Some(1.0 / 30.0),
+            ScanRate::Rapid => Some(1.0 / 15.0),
+            ScanRate::Turbo => Some(1.0 / 8.0),
+            ScanRate::Ultra => None,
+        }
+    }
+}
+
+impl std::str::FromStr for ScanRate {
+    type Err = String;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "n" | "normal" => Ok(ScanRate::Normal),
+            "r" | "rapid" => Ok(ScanRate::Rapid),
+            "t" | "turbo" => Ok(ScanRate::Turbo),
+            "u" | "ultra" => Ok(ScanRate::Ultra),
+            _ => Err(format!("unknown scan rate '{}': use n, r, t, or u", s)),
+        }
+    }
+}
+
+impl std::fmt::Display for ScanRate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ScanRate::Normal => write!(f, "n"),
+            ScanRate::Rapid => write!(f, "r"),
+            ScanRate::Turbo => write!(f, "t"),
+            ScanRate::Ultra => write!(f, "u"),
+        }
+    }
+}
+
+impl Serialize for ScanRate {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for ScanRate {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        s.parse().map_err(serde::de::Error::custom)
+    }
+}
+
 mod defaults {
     pub const N_CALIBRATION_SPECTRA: usize = 50;
     pub const LAMBDA_FACTOR: f64 = 3.0;
@@ -72,6 +142,14 @@ pub struct Config {
     pub config: Option<PathBuf>,
 
     // --- Calibration overrides ---
+    /// Scan rate code: n (Normal 33 kTh/s), r (Rapid 67 kTh/s),
+    /// t (Turbo 125 kTh/s), u (Ultra 200 kTh/s). Sets σ and grid
+    /// spacing from known instrument parameters. Overridden by
+    /// --sigma, --sigma-ms1, --sigma-ms2, --grid-spacing.
+    #[arg(long, value_parser = clap::value_parser!(ScanRate))]
+    #[serde(default)]
+    pub scan_rate: Option<ScanRate>,
+
     /// Override Gaussian σ for both MS1 and MS2 (Th). Overridden by
     /// --sigma-ms1 / --sigma-ms2 if also specified.
     #[arg(long)]
@@ -194,6 +272,9 @@ impl Config {
                 .map_err(|e| crate::CentrixError::Config(e.to_string()))?;
 
             // CLI options override file config for Option fields only if not set
+            if self.scan_rate.is_none() {
+                self.scan_rate = file_config.scan_rate;
+            }
             if self.sigma.is_none() {
                 self.sigma = file_config.sigma;
             }

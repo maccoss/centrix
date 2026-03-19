@@ -116,15 +116,21 @@ fn run_single_file(
     );
     let cal_spectra = io::reader::load_first_n(input_path, config.n_calibration_spectra)?;
 
-    // Resolve --sigma into per-level overrides (--sigma-ms1/--sigma-ms2 win if set)
-    let sigma_ms1_override = config.sigma_ms1.or(config.sigma);
-    let sigma_ms2_override = config.sigma_ms2.or(config.sigma);
+    // Resolve sigma overrides: --sigma-ms1/--sigma-ms2 > --sigma > --scan-rate > auto-calibrate
+    let scan_rate_sigma = config.scan_rate.map(|sr| sr.sigma());
+    let sigma_ms1_override = config.sigma_ms1.or(config.sigma).or(scan_rate_sigma);
+    let sigma_ms2_override = config.sigma_ms2.or(config.sigma).or(scan_rate_sigma);
+
+    // Resolve grid spacing: --grid-spacing > --scan-rate > auto-detect
+    let grid_spacing_override = config.grid_spacing.or_else(|| {
+        config.scan_rate.and_then(|sr| sr.grid_spacing())
+    });
 
     let cal = calibration::calibrate(
         &cal_spectra,
         sigma_ms1_override,
         sigma_ms2_override,
-        config.grid_spacing,
+        grid_spacing_override,
     )?;
 
     log::info!(
@@ -406,6 +412,7 @@ pub fn run_centroid_test(path: &std::path::Path, n: usize, n_cal: usize) -> Resu
         input: vec![path.to_string_lossy().into_owned()],
         output: None,
         config: None,
+        scan_rate: None,
         sigma: None,
         sigma_ms1: None,
         sigma_ms2: None,

@@ -345,6 +345,8 @@ mod tests {
             input: vec!["/dev/null".to_string()],
             output: None,
             config: None,
+            scan_rate: None,
+            sigma: None,
             sigma_ms1: None,
             sigma_ms2: None,
             grid_spacing: None,
