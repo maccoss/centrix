@@ -116,10 +116,14 @@ fn run_single_file(
     );
     let cal_spectra = io::reader::load_first_n(input_path, config.n_calibration_spectra)?;
 
+    // Resolve --sigma into per-level overrides (--sigma-ms1/--sigma-ms2 win if set)
+    let sigma_ms1_override = config.sigma_ms1.or(config.sigma);
+    let sigma_ms2_override = config.sigma_ms2.or(config.sigma);
+
     let cal = calibration::calibrate(
         &cal_spectra,
-        config.sigma_ms1,
-        config.sigma_ms2,
+        sigma_ms1_override,
+        sigma_ms2_override,
         config.grid_spacing,
     )?;
 
@@ -402,6 +406,7 @@ pub fn run_centroid_test(path: &std::path::Path, n: usize, n_cal: usize) -> Resu
         input: vec![path.to_string_lossy().into_owned()],
         output: None,
         config: None,
+        sigma: None,
         sigma_ms1: None,
         sigma_ms2: None,
         grid_spacing: None,

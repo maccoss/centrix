@@ -12,19 +12,15 @@ Centrix is designed for the **Thermo Stellar** radial ejection linear ion trap.
 Profile peaks from this instrument are well-modeled by Gaussians with full-width
 at half-maximum (FWHM) of 0.5–2.0 Da, depending on scan rate.
 
-| Scan Rate | FWHM (Da) | σ (Da) | Filter Code | Typical Use |
-|-----------|-----------|--------|-------------|-------------|
-| 33 kTh/s  | 0.5       | 0.212  | `n`         | High-res MS1 |
-| 67 kTh/s  | 0.6       | 0.255  | `r`         | Standard MS1 |
-| 125 kTh/s | 0.8       | 0.340  | `t`         | Standard DIA MS2 |
-| 200 kTh/s | 2.0       | 0.849  | `u`         | Fast scan MS2 |
+| Scan Rate | FWHM (Da) | σ (Da) | Grid Spacing | Pts/Th | Filter Code | Typical Use |
+|-----------|-----------|--------|-------------|--------|-------------|-------------|
+| 33 kTh/s  | 0.5       | 0.212  | 1/30 Th     | 30     | `n`         | High-res MS1 |
+| 67 kTh/s  | 0.6       | 0.255  | 1/15 Th     | 15     | `r`         | Standard MS1 |
+| 125 kTh/s | 0.8       | 0.340  | 1/8 Th      | 8      | `t`         | Standard DIA MS2 |
+| 200 kTh/s | 2.0       | 0.849  | —           | —      | `u`         | Fast scan MS2 |
 
-Profile grid spacing is exact and fixed by firmware:
-
-| MS Level | Spacing          | Points/Th | Points/σ (σ≈0.25) | Typical Points/Scan |
-|----------|------------------|-----------|--------------------|--------------------|
-| MS1      | 1/15 ≈ 0.0667 Th | 15        | ~3.75              | 13,500             |
-| MS2      | 1/8  = 0.125 Th  | 8         | ~2.00              | 10,400             |
+Profile grid spacing is exact and fixed by firmware per scan rate. It is
+auto-detected from the median consecutive m/z difference in the data.
 
 ## Pipeline Overview
 
@@ -77,8 +73,9 @@ auto-detect instrument parameters.
 ### Grid Spacing Detection
 
 The median of consecutive m/z differences gives the profile grid spacing. This is
-deterministic firmware output — the spacing is exactly 1/15 Th for MS1 and 1/8 Th
-for MS2.
+deterministic firmware output — the spacing depends on scan rate (e.g. 1/30 Th
+at 33 kTh/s, 1/15 Th at 67 kTh/s, 1/8 Th at 125 kTh/s). Centrix auto-detects
+the actual spacing from each file.
 
 ### Peak Width (σ) Estimation
 

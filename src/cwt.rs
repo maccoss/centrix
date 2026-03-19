@@ -201,24 +201,25 @@ pub const SIGMA_PTS_SWEEP: &[f64] = &[
 
 // ── Known Stellar scan rates ──────────────────────────────────────────────────
 
-/// Stellar scan rates with known FWHM (m/z) and σ (m/z).
-pub const STELLAR_SCAN_RATES: &[(f64, f64, f64)] = &[
-    // (scan_rate_kths, fwhm_mz, sigma_mz)
-    (33.0, 0.5, 0.212),
-    (67.0, 0.6, 0.255),
-    (125.0, 0.8, 0.340),
-    (200.0, 2.0, 0.849),
+/// Thermo LIT scan rates with known FWHM (m/z), σ (m/z), and grid spacing.
+pub const LIT_SCAN_RATES: &[(f64, f64, f64, f64)] = &[
+    // (scan_rate_kths, fwhm_mz, sigma_mz, grid_spacing_mz)
+    (33.0, 0.5, 0.212, 1.0 / 30.0),
+    (67.0, 0.6, 0.255, 1.0 / 15.0),
+    (125.0, 0.8, 0.340, 1.0 / 8.0),
+    (200.0, 2.0, 0.849, 0.0), // grid spacing unknown for 200 kTh/s
 ];
 
 /// Fallback σ for when calibration finds too few peaks.
 /// Corresponds to 125 kTh/s, the most common DIA scan rate.
 pub const SIGMA_FALLBACK_MZ: f64 = 0.340;
 
-/// Infer the closest Stellar scan rate from a measured σ (m/z).
+/// Infer the closest Thermo LIT scan rate from a measured σ (m/z).
+/// Returns (scan_rate_kths, fwhm_mz, sigma_mz).
 pub fn infer_scan_rate(sigma_mz: f64) -> (f64, f64, f64) {
-    STELLAR_SCAN_RATES
+    LIT_SCAN_RATES
         .iter()
-        .copied()
+        .map(|&(rate, fwhm, sigma, _)| (rate, fwhm, sigma))
         .min_by(|&(_, _, s1), &(_, _, s2)| (s1 - sigma_mz).abs().total_cmp(&(s2 - sigma_mz).abs()))
         .unwrap_or((125.0, 0.8, 0.340))
 }

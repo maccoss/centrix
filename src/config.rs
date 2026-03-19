@@ -72,12 +72,18 @@ pub struct Config {
     pub config: Option<PathBuf>,
 
     // --- Calibration overrides ---
-    /// Override Gaussian σ for MS1 (Da). Auto-calibrated if not set.
+    /// Override Gaussian σ for both MS1 and MS2 (Th). Overridden by
+    /// --sigma-ms1 / --sigma-ms2 if also specified.
+    #[arg(long)]
+    #[serde(default)]
+    pub sigma: Option<f64>,
+
+    /// Override Gaussian σ for MS1 (Th). Auto-calibrated if not set.
     #[arg(long)]
     #[serde(default)]
     pub sigma_ms1: Option<f64>,
 
-    /// Override Gaussian σ for MS2 (Da). Auto-calibrated if not set.
+    /// Override Gaussian σ for MS2 (Th). Auto-calibrated if not set.
     #[arg(long)]
     #[serde(default)]
     pub sigma_ms2: Option<f64>,
@@ -188,6 +194,9 @@ impl Config {
                 .map_err(|e| crate::CentrixError::Config(e.to_string()))?;
 
             // CLI options override file config for Option fields only if not set
+            if self.sigma.is_none() {
+                self.sigma = file_config.sigma;
+            }
             if self.sigma_ms1.is_none() {
                 self.sigma_ms1 = file_config.sigma_ms1;
             }

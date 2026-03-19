@@ -3,14 +3,14 @@
 //! ## σ calibration via CWT
 //!
 //! For a linear ion trap at a fixed scan rate, σ is **constant across the entire
-//! m/z range**. The Stellar has 4 discrete scan rates:
+//! m/z range**. Thermo LIT instruments have 4 discrete scan rates:
 //!
-//! | Scan rate  | FWHM (m/z) | σ (m/z) |
-//! |------------|------------|---------|
-//! | 33 kTh/s  | 0.5        | 0.212   |
-//! | 67 kTh/s  | 0.6        | 0.255   |
-//! | 125 kTh/s | 0.8        | 0.340   |
-//! | 200 kTh/s | 2.0        | 0.849   |
+//! | Scan rate  | FWHM (m/z) | σ (m/z) | Grid spacing |
+//! |------------|------------|---------|-------------|
+//! | 33 kTh/s  | 0.5        | 0.212   | 1/30 Th      |
+//! | 67 kTh/s  | 0.6        | 0.255   | 1/15 Th      |
+//! | 125 kTh/s | 0.8        | 0.340   | 1/8 Th       |
+//! | 200 kTh/s | 2.0        | 0.849   | —            |
 //!
 //! MS1 and MS2 may use different scan rates and are calibrated independently.
 //!
@@ -21,8 +21,9 @@
 //!
 //! ## Grid spacing detection
 //!
-//! The Stellar writes data on a perfectly uniform firmware-fixed grid.
-//! Empirically: MS2 = 1/8 m/z, MS1 = 1/15 m/z.
+//! Thermo LIT instruments write data on a perfectly uniform firmware-fixed grid.
+//! Grid spacing depends on scan rate (e.g. 1/30 Th at 33 kTh/s, 1/15 Th at
+//! 67 kTh/s, 1/8 Th at 125 kTh/s) and is auto-detected from the data.
 
 use crate::cwt::{
     cwt_scalogram, cwt_sigma_estimates, infer_scan_rate, relative_min_response, SIGMA_FALLBACK_MZ,

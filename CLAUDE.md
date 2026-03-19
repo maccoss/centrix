@@ -148,18 +148,21 @@ Dev dependencies: `criterion = "0.5"`, `approx = "0.5"`, `tempfile = "3.14"`
 - Iterators and functional style preferred
 - `cargo fmt` defaults — no manual width overrides
 
-## Empirical Data Findings (from real Stellar mzML files)
+## Empirical Data Findings (from real LIT mzML files)
 
-Profile grid spacing is **exact and fixed by firmware** — perfectly uniform within each scan:
+Profile grid spacing is **exact and fixed by firmware per scan rate** — perfectly uniform within each scan:
 
-| MS level | Spacing           | Points/Th | Points/σ (σ≈0.25 Th) | Pts/scan | m/z range |
-|----------|-------------------|-----------|----------------------|----------|-----------|
-| MS1      | 1/15 = 0.06667 Th | 15        | ~3.75                | 13,500   | 350–1250  |
-| MS2      | 1/8  = 0.125 Th   | 8         | 2.00                 | 10,400   | 200–1500  |
+| Scan Rate | Spacing           | Points/Th | Points/σ   |
+|-----------|-------------------|-----------|------------|
+| 33 kTh/s  | 1/30 = 0.03333 Th | 30        | ~6.35      |
+| 67 kTh/s  | 1/15 = 0.06667 Th | 15        | ~3.75      |
+| 125 kTh/s | 1/8  = 0.125 Th   | 8         | ~2.00      |
 
-MS2 has only **2 data points per σ** — the 3-point fast-path Gaussian fit is
-marginal at this density; LASSO is preferred for MS2. Grid auto-detection recovers
-these exact spacings from the data point density.
+These spacings are consistent across Stellar and Fusion Lumos LIT instruments.
+Grid auto-detection recovers the exact spacing from the data point density.
+
+At 125 kTh/s, MS2 has only **2 data points per σ** — LASSO is preferred over
+a 3-point Gaussian fit at this density.
 
 Thermo centroider output for comparison:
 

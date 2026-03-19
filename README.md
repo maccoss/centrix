@@ -92,17 +92,20 @@ See [docs/usage.md](docs/usage.md) for detailed usage.
 
 ## Target Instrument
 
-Centrix is designed for the **Thermo Stellar** radial ejection linear ion trap.
+Centrix is designed for **Thermo linear ion traps** (Stellar, Fusion Lumos, etc.).
 Profile peaks are Gaussian with FWHM 0.5–2.0 Da depending on scan rate:
 
-| Scan Rate | FWHM | σ (Da) | Filter Code |
-|-----------|------|--------|-------------|
-| 33 kTh/s  | 0.5  | 0.212  | `n`         |
-| 67 kTh/s  | 0.6  | 0.255  | `r`         |
-| 125 kTh/s | 0.8  | 0.340  | `t`         |
-| 200 kTh/s | 2.0  | 0.849  | `u`         |
+| Scan Rate | FWHM | σ (Da) | Grid Spacing | Pts/Th | Filter Code |
+|-----------|------|--------|-------------|--------|-------------|
+| 33 kTh/s  | 0.5  | 0.212  | 1/30 Th     | 30     | `n`         |
+| 67 kTh/s  | 0.6  | 0.255  | 1/15 Th     | 15     | `r`         |
+| 125 kTh/s | 0.8  | 0.340  | 1/8 Th      | 8      | `t`         |
+| 200 kTh/s | 2.0  | 0.849  | —           | —      | `u`         |
 
-Profile grid spacing is firmware-fixed: 1/15 Th (MS1), 1/8 Th (MS2).
+Profile grid spacing is firmware-fixed per scan rate and auto-detected from the
+data. Filter codes appear in Stellar (NSI) filter strings; other instruments
+(e.g. Fusion Lumos with ESI) use the same scan rates but without filter codes,
+so Centrix falls back to CWT-based σ calibration.
 
 ## Output
 
