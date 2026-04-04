@@ -14,7 +14,10 @@
       "Bash(grep*)",
       "Bash(head*)",
       "Bash(tail*)",
-      "Bash(wc*)"
+      "Bash(wc*)",
+      "Bash(gh auth:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)"
     ],
     "deny": []
   }

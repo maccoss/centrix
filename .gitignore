@@ -22,3 +22,5 @@ target
 example-data/
 
 .venv/
+.claude/
+
