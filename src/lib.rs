@@ -122,9 +122,9 @@ fn run_single_file(
     let sigma_ms2_override = config.sigma_ms2.or(config.sigma).or(scan_rate_sigma);
 
     // Resolve grid spacing: --grid-spacing > --scan-rate > auto-detect
-    let grid_spacing_override = config.grid_spacing.or_else(|| {
-        config.scan_rate.and_then(|sr| sr.grid_spacing())
-    });
+    let grid_spacing_override = config
+        .grid_spacing
+        .or_else(|| config.scan_rate.and_then(|sr| sr.grid_spacing()));
 
     let cal = calibration::calibrate(
         &cal_spectra,

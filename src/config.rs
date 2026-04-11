@@ -7,10 +7,10 @@ use std::path::PathBuf;
 /// Maps single-letter filter codes (n/r/t/u) to known σ and grid spacing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScanRate {
-    Normal,  // n — 33 kTh/s, σ = 0.212, grid = 1/30
-    Rapid,   // r — 67 kTh/s, σ = 0.255, grid = 1/15
-    Turbo,   // t — 125 kTh/s, σ = 0.340, grid = 1/8
-    Ultra,   // u — 200 kTh/s, σ = 0.849
+    Normal, // n — 33 kTh/s, σ = 0.212, grid = 1/30
+    Rapid,  // r — 67 kTh/s, σ = 0.255, grid = 1/15
+    Turbo,  // t — 125 kTh/s, σ = 0.340, grid = 1/8
+    Ultra,  // u — 200 kTh/s, σ = 0.849
 }
 
 impl ScanRate {
@@ -60,13 +60,18 @@ impl std::fmt::Display for ScanRate {
 }
 
 impl Serialize for ScanRate {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
         serializer.serialize_str(&self.to_string())
     }
 }
 
 impl<'de> Deserialize<'de> for ScanRate {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
         let s = String::deserialize(deserializer)?;
         s.parse().map_err(serde::de::Error::custom)
     }

@@ -183,8 +183,7 @@ pub fn centroid_spectrum(
             let output = solve_nonneg_lasso(&input);
 
             if output.n_nonzero() > 0 {
-                let area_scale =
-                    basis.sigma * std::f64::consts::TAU.sqrt() / basis.grid_spacing;
+                let area_scale = basis.sigma * std::f64::consts::TAU.sqrt() / basis.grid_spacing;
                 let centroids_raw = refine_subgrid(&output.beta, &state.grid);
                 let centroids: Vec<CentroidResult> = centroids_raw
                     .into_iter()
@@ -241,7 +240,11 @@ fn run_lasso_region(
     lambda: f64,
     center_mz: f64,
     warm_start: Option<&[f64]>,
-) -> (Vec<CentroidResult>, Option<Pass1State>, Option<ResidualSample>) {
+) -> (
+    Vec<CentroidResult>,
+    Option<Pass1State>,
+    Option<ResidualSample>,
+) {
     if mz_slice.len() < 2 {
         return (Vec::new(), None, None);
     }
@@ -282,7 +285,10 @@ fn run_lasso_region(
         .map(|(y, ab)| y - ab)
         .collect();
     let mz_center = (mz_slice[0] + mz_slice[mz_slice.len() - 1]) / 2.0;
-    let residual_sample = ResidualSample { mz_center, residuals };
+    let residual_sample = ResidualSample {
+        mz_center,
+        residuals,
+    };
 
     // Sub-grid centroid refinement; convert amplitude → integrated area
     // Discrete sum convention: β × σ√(2π) / h, matching Thermo centroider output
@@ -509,8 +515,7 @@ mod tests {
         let center = 500.0625f64;
         let amplitude = 10000.0f64;
 
-        let spectrum =
-            synthetic_spectrum(494.0, spacing, 160, &[(center, amplitude)], sigma, 5.0);
+        let spectrum = synthetic_spectrum(494.0, spacing, 160, &[(center, amplitude)], sigma, 5.0);
         let basis = make_basis(sigma, spacing);
         let config = make_config();
 
@@ -575,4 +580,5 @@ mod tests {
             "two peaks 1.84σ apart should both be preserved; centroids: {:?}",
             centroids.iter().map(|c| c.mz).collect::<Vec<_>>()
         );
-    }}
+    }
+}
