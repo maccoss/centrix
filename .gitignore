@@ -24,3 +24,8 @@ example-data/
 .venv/
 .claude/
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
