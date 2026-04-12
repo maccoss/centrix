@@ -146,12 +146,24 @@ struct IndexEntry {
 /// centroided data while preserving all other mzML content.
 ///
 /// Call [`write_spectrum`] once per spectrum in file order, then [`finish`].
+///
+/// Empty centroid results (zero peaks) are automatically dropped from the
+/// output: the spectrum block is consumed from the input but never written.
+/// The spectrum `index=` attribute is renumbered to be contiguous from 0,
+/// and the `<spectrumList count="N">` attribute is patched after finishing
+/// to match the actual number of spectra written.
 pub struct PassthroughWriter {
     reader: Reader<BufReader<std::fs::File>>,
     writer: Writer<HashCountWriter<BufWriter<std::fs::File>>>,
     buf: Vec<u8>,
     spectrum_offsets: Vec<IndexEntry>,
     chromatogram_offsets: Vec<IndexEntry>,
+    /// Contiguous output counter for `<spectrum index="N">`.
+    n_written: usize,
+    /// Number of input spectra that produced zero centroids and were dropped.
+    n_skipped: usize,
+    /// Output path, stored so we can reopen to patch spectrumList count.
+    output_path: std::path::PathBuf,
 }
 
 impl PassthroughWriter {
@@ -171,17 +183,32 @@ impl PassthroughWriter {
             buf: Vec::with_capacity(64 * 1024),
             spectrum_offsets: Vec::new(),
             chromatogram_offsets: Vec::new(),
+            n_written: 0,
+            n_skipped: 0,
+            output_path: output.to_path_buf(),
         })
     }
 
     /// Write the next spectrum with the given centroided data.
     ///
     /// Pumps XML events forward — passing through non-spectrum content — until
-    /// one `<spectrum>` has been fully rewritten, then returns.
+    /// one `<spectrum>` has been consumed from the input.
+    ///
+    /// If `centroids` is empty, the spectrum block is consumed but NOT written
+    /// to the output. This drops zero-peak spectra that crash downstream
+    /// parsers like DIA-NN.
     pub fn write_spectrum(&mut self, centroids: &[CentroidResult]) -> Result<()> {
-        let mz_b64 = encode_mz_array(centroids);
-        let int_b64 = encode_intensity_array(centroids);
         let n_centroids = centroids.len();
+        let drop_spectrum = n_centroids == 0;
+
+        let (mz_b64, int_b64) = if drop_spectrum {
+            (String::new(), String::new())
+        } else {
+            (
+                encode_mz_array(centroids),
+                encode_intensity_array(centroids),
+            )
+        };
 
         // Move buf out of self to avoid borrow-checker conflict between
         // self.reader (needs &mut buf) and self.writer / self.spectrum_offsets.
@@ -194,19 +221,37 @@ impl PassthroughWriter {
             // Spectrum start — rewrite and process body
             if let Event::Start(ref e) = event {
                 if e.name().as_ref() == b"spectrum" {
+                    if drop_spectrum {
+                        // Consume the spectrum block without writing anything.
+                        self.skip_past_end(&mut buf, b"spectrum")?;
+                        self.n_skipped += 1;
+                        self.buf = buf;
+                        return Ok(());
+                    }
+
                     let offset = self.writer.get_ref().position();
                     let id = extract_attr(e, b"id").unwrap_or_default();
                     self.spectrum_offsets.push(IndexEntry { id, offset });
 
+                    let new_index_str = self.n_written.to_string();
+                    let n_centroids_str = n_centroids.to_string();
                     let mut new_start = BytesStart::new("spectrum");
                     for attr in e.attributes().filter_map(|a| a.ok()) {
-                        if attr.key.as_ref() == b"defaultArrayLength" {
-                            new_start.push_attribute((
-                                "defaultArrayLength",
-                                n_centroids.to_string().as_str(),
-                            ));
-                        } else {
-                            new_start.push_attribute(attr);
+                        match attr.key.as_ref() {
+                            // Renumber index to be contiguous (0..n_written).
+                            // Gappy indices crash DIA-NN.
+                            b"index" => {
+                                new_start.push_attribute(("index", new_index_str.as_str()));
+                            }
+                            b"defaultArrayLength" => {
+                                new_start.push_attribute((
+                                    "defaultArrayLength",
+                                    n_centroids_str.as_str(),
+                                ));
+                            }
+                            _ => {
+                                new_start.push_attribute(attr);
+                            }
                         }
                     }
                     self.writer
@@ -214,6 +259,7 @@ impl PassthroughWriter {
                         .map_err(xml_err)?;
 
                     self.process_spectrum_body(&mut buf, &mz_b64, &int_b64)?;
+                    self.n_written += 1;
                     self.buf = buf;
                     return Ok(());
                 }
@@ -526,7 +572,22 @@ impl PassthroughWriter {
         self.writer.get_mut().flush().map_err(CentrixError::Io)?;
 
         let total = self.writer.get_ref().position();
-        log::info!("Wrote {total} bytes to output");
+        let n_written = self.n_written;
+        let n_skipped = self.n_skipped;
+        let output_path = self.output_path.clone();
+
+        // Drop the writer explicitly so the file handle is closed and we
+        // can reopen it for patching.
+        drop(self.writer);
+
+        // Patch the <spectrumList count="N"> attribute to match the actual
+        // number of spectra written (which may be less than the input count
+        // if any spectra were dropped for producing zero centroids).
+        patch_spectrum_list_count(&output_path, n_written)?;
+
+        log::info!(
+            "Wrote {total} bytes to output ({n_written} spectra, {n_skipped} empty dropped)"
+        );
         Ok(())
     }
 
@@ -653,6 +714,91 @@ impl PassthroughWriter {
             }
         }
     }
+}
+
+// ── Post-write count patching ─────────────────────────────────────────────────
+
+/// Patch the `<spectrumList count="N">` attribute in a written mzML file.
+///
+/// The passthrough writer preserves the input's count attribute, which may
+/// be wrong after we drop empty spectra. This reopens the file, scans the
+/// first 64 KB for the `<spectrumList ...>` tag, and rewrites the count
+/// value in place (padded with spaces to preserve byte offsets so the
+/// regenerated index remains valid).
+fn patch_spectrum_list_count(path: &Path, new_count: usize) -> Result<()> {
+    use std::io::{Read, Seek, SeekFrom, Write};
+
+    // <spectrumList> is always in the first 64 KB of an mzML header.
+    const SCAN_BYTES: usize = 64 * 1024;
+
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .map_err(CentrixError::Io)?;
+
+    let file_len = file.metadata().map_err(CentrixError::Io)?.len() as usize;
+    let to_read = SCAN_BYTES.min(file_len);
+    let mut header = vec![0u8; to_read];
+    file.read_exact(&mut header).map_err(CentrixError::Io)?;
+
+    // Find <spectrumList count="..."
+    let needle = b"<spectrumList";
+    let Some(tag_start) = find_subslice(&header, needle) else {
+        log::warn!("<spectrumList> not found in first {SCAN_BYTES} bytes; count not patched");
+        return Ok(());
+    };
+
+    // Find count=" within this tag
+    let tag_end = find_subslice(&header[tag_start..], b">")
+        .map(|p| tag_start + p)
+        .unwrap_or(header.len());
+    let tag_slice = &header[tag_start..tag_end];
+
+    let Some(count_attr_rel) = find_subslice(tag_slice, b"count=\"") else {
+        log::warn!("<spectrumList> has no count attribute; not patched");
+        return Ok(());
+    };
+    let count_value_start = tag_start + count_attr_rel + b"count=\"".len();
+
+    // Find closing quote
+    let Some(close_quote_rel) = header[count_value_start..].iter().position(|&b| b == b'"') else {
+        return Err(CentrixError::Xml(
+            "malformed spectrumList count attribute".into(),
+        ));
+    };
+    let count_value_end = count_value_start + close_quote_rel;
+    let original_width = count_value_end - count_value_start;
+
+    // Build the replacement, padded with trailing spaces to match the
+    // original byte width (so all subsequent byte offsets stay unchanged).
+    let new_count_str = new_count.to_string();
+    if new_count_str.len() > original_width {
+        return Err(CentrixError::Xml(format!(
+            "new count {} has more digits than original field width {}",
+            new_count_str, original_width
+        )));
+    }
+    let mut replacement = new_count_str.into_bytes();
+    replacement.resize(original_width, b' ');
+
+    // Write the replacement bytes in place.
+    file.seek(SeekFrom::Start(count_value_start as u64))
+        .map_err(CentrixError::Io)?;
+    file.write_all(&replacement).map_err(CentrixError::Io)?;
+    file.flush().map_err(CentrixError::Io)?;
+
+    log::debug!(
+        "Patched <spectrumList count=\"{}\"> at byte offset {}",
+        new_count,
+        count_value_start
+    );
+    Ok(())
+}
+
+/// Find the byte position of `needle` within `haystack`, or None.
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
 }
 
 // ── Phase 1 identity passthrough (kept for testing) ───────────────────────────
