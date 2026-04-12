@@ -155,7 +155,13 @@ fn run_single_file(
         config.lambda_factor,
     );
 
-    let mut writer = io::PassthroughWriter::new(input_path, output_path)?;
+    // Write to a local temp file first, then copy to the final destination.
+    // This avoids SMB/NFS write corruption when the output is on a network share.
+    let temp_dir = std::env::temp_dir();
+    let temp_file = temp_dir.join(format!("centrix_{}.mzML", std::process::id()));
+    log::debug!("Writing to temp file: {}", temp_file.display());
+
+    let mut writer = io::PassthroughWriter::new(input_path, &temp_file)?;
     let reader = io::reader::ProfileReader::open(input_path)?;
 
     // Progress bar
@@ -231,7 +237,86 @@ fn run_single_file(
     // Finish writing: drain chromatograms, regenerate index/checksum
     writer.finish()?;
 
+    // Copy temp file to final destination, then remove temp
+    log::info!("Copying to {}", output_path.display());
+    std::fs::copy(&temp_file, output_path).map_err(CentrixError::Io)?;
+    std::fs::remove_file(&temp_file).map_err(CentrixError::Io)?;
+
+    // Verify the output file if it landed on a potentially unreliable filesystem
+    verify_output(output_path)?;
+
     log::info!("Done.");
+    Ok(())
+}
+
+/// Verify an output mzML file for null-byte corruption.
+///
+/// Network filesystems (SMB/NFS) can silently corrupt large writes by zeroing
+/// out 4 KB sectors. This scan detects such corruption immediately after the
+/// copy completes, so the user gets a clear error instead of a mysterious
+/// parse failure downstream.
+pub fn verify_output(path: &std::path::Path) -> Result<()> {
+    use std::io::Read;
+
+    log::info!("Verifying output: {}", path.display());
+    let mut file = std::fs::File::open(path).map_err(CentrixError::Io)?;
+    let file_size = file.metadata().map_err(CentrixError::Io)?.len();
+
+    let mut buf = vec![0u8; 256 * 1024];
+    let mut offset: u64 = 0;
+    let null_threshold = 512; // consecutive null bytes that signal corruption
+
+    loop {
+        let n = file.read(&mut buf).map_err(CentrixError::Io)?;
+        if n == 0 {
+            break;
+        }
+        // Scan for runs of null bytes
+        let mut run_start = None;
+        for (i, &b) in buf[..n].iter().enumerate() {
+            if b == 0 {
+                if run_start.is_none() {
+                    run_start = Some(i);
+                }
+            } else if let Some(start) = run_start {
+                let run_len = i - start;
+                if run_len >= null_threshold {
+                    return Err(CentrixError::Xml(format!(
+                        "Null-byte corruption detected in output file {} at byte offset {}. \
+                         Found {} consecutive null bytes. This is typically caused by \
+                         network filesystem (SMB/NFS) write errors. Re-run centrix to \
+                         regenerate this file.",
+                        path.display(),
+                        offset + start as u64,
+                        run_len
+                    )));
+                }
+                run_start = None;
+            }
+        }
+        // Check trailing run
+        if let Some(start) = run_start {
+            let run_len = n - start;
+            if run_len >= null_threshold {
+                return Err(CentrixError::Xml(format!(
+                    "Null-byte corruption detected in output file {} at byte offset {}. \
+                     Found {}+ consecutive null bytes. This is typically caused by \
+                     network filesystem (SMB/NFS) write errors. Re-run centrix to \
+                     regenerate this file.",
+                    path.display(),
+                    offset + start as u64,
+                    run_len
+                )));
+            }
+        }
+        offset += n as u64;
+    }
+
+    let size_mb = file_size as f64 / (1024.0 * 1024.0);
+    log::info!(
+        "Verification passed: {:.1} MB, no corruption detected",
+        size_mb
+    );
     Ok(())
 }
 

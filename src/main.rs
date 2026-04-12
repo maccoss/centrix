@@ -61,6 +61,13 @@ enum Command {
         #[arg(long, default_value_t = 50)]
         n_cal: usize,
     },
+
+    /// Verify mzML file(s) for null-byte corruption (SMB/NFS write errors)
+    Verify {
+        /// Input mzML file(s) or glob patterns
+        #[arg(required = true, num_args = 1..)]
+        input: Vec<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -96,6 +103,36 @@ fn main() -> anyhow::Result<()> {
                 .filter_level(log::LevelFilter::Info)
                 .init();
             centrix::run_centroid_test(&input, n, n_cal).context("CentroidTest failed")?;
+        }
+
+        Command::Verify { input } => {
+            env_logger::Builder::new()
+                .filter_level(log::LevelFilter::Info)
+                .init();
+            let mut any_failed = false;
+            for pattern in &input {
+                let paths: Vec<_> = glob::glob(pattern)
+                    .expect("Invalid glob pattern")
+                    .filter_map(|p| p.ok())
+                    .collect();
+                if paths.is_empty() {
+                    eprintln!("No files matched: {pattern}");
+                    any_failed = true;
+                    continue;
+                }
+                for path in paths {
+                    match centrix::verify_output(&path) {
+                        Ok(()) => println!("OK: {}", path.display()),
+                        Err(e) => {
+                            eprintln!("FAIL: {}: {e}", path.display());
+                            any_failed = true;
+                        }
+                    }
+                }
+            }
+            if any_failed {
+                std::process::exit(1);
+            }
         }
 
         Command::Run(config) => {
