@@ -199,8 +199,8 @@ fn run_single_file(
             .collect();
 
         // Write results in file order (single-threaded I/O)
-        for (centroids, _stats) in &results {
-            writer.write_spectrum(centroids)?;
+        for (spectrum, (centroids, _stats)) in batch.iter().zip(&results) {
+            writer.write_spectrum(&spectrum.native_id, centroids)?;
             n_centroids_total += centroids.len();
         }
 
@@ -222,8 +222,8 @@ fn run_single_file(
             })
             .collect();
 
-        for (centroids, _stats) in &results {
-            writer.write_spectrum(centroids)?;
+        for (spectrum, (centroids, _stats)) in batch.iter().zip(&results) {
+            writer.write_spectrum(&spectrum.native_id, centroids)?;
             n_centroids_total += centroids.len();
         }
 
