@@ -146,6 +146,9 @@ struct IndexEntry {
 /// centroided data while preserving all other mzML content.
 ///
 /// Call [`write_spectrum`] once per spectrum in file order, then [`finish`].
+/// Each call names the spectrum its centroids came from, and the writer checks
+/// it against the `<spectrum>` it rewrites, so results can never land on the
+/// wrong spectrum.
 ///
 /// Empty centroid results (zero peaks) ARE still written to the output with
 /// `defaultArrayLength="0"`. This is intentional: the `<chromatogramList>`
@@ -184,8 +187,10 @@ impl PassthroughWriter {
     /// Write the next spectrum with the given centroided data.
     ///
     /// Pumps XML events forward — passing through non-spectrum content — until
-    /// one `<spectrum>` has been fully rewritten, then returns.
-    pub fn write_spectrum(&mut self, centroids: &[CentroidResult]) -> Result<()> {
+    /// one `<spectrum>` has been fully rewritten, then returns. `native_id` is
+    /// the id of the spectrum the centroids came from; it must be the id of the
+    /// next `<spectrum>` in the file, or this returns an error.
+    pub fn write_spectrum(&mut self, native_id: &str, centroids: &[CentroidResult]) -> Result<()> {
         let mz_b64 = encode_mz_array(centroids);
         let int_b64 = encode_intensity_array(centroids);
         let n_centroids = centroids.len();
@@ -203,6 +208,14 @@ impl PassthroughWriter {
                 if e.name().as_ref() == b"spectrum" {
                     let offset = self.writer.get_ref().position();
                     let id = extract_attr(e, b"id").unwrap_or_default();
+                    let unescaped = quick_xml::escape::unescape(&id).map_err(xml_err)?;
+                    if unescaped != native_id {
+                        let message = format!(
+                            "centroids of spectrum '{native_id}' would be written to spectrum '{unescaped}'"
+                        );
+                        self.buf = buf;
+                        return Err(CentrixError::Xml(message));
+                    }
                     self.spectrum_offsets.push(IndexEntry { id, offset });
 
                     let mut new_start = BytesStart::new("spectrum");

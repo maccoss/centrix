@@ -28,8 +28,13 @@ pub struct ProfileSpectrum {
 /// Streaming reader for profile-mode mzML files.
 ///
 /// Iterates over all spectra (MS1 and MS2) in file order, returning
-/// `ProfileSpectrum` for each. Emits an error and stops if a centroid-mode
+/// `ProfileSpectrum` for each, including spectra with no data points, which
+/// come back with empty arrays. Emits an error and stops if a centroid-mode
 /// spectrum is encountered, since Centrix requires raw profile data.
+///
+/// Empty spectra must not be skipped: the passthrough writer rewrites each
+/// `<spectrum>` of the input with the result at the same position, so a
+/// skipped spectrum would shift every later result onto the spectrum before it.
 pub struct ProfileReader {
     path: PathBuf,
     inner: MzMLReader<BufReader<File>>,
@@ -59,25 +64,20 @@ impl Iterator for ProfileReader {
     type Item = Result<ProfileSpectrum>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let mz_spectrum = self.inner.next()?;
-            match convert_spectrum(mz_spectrum, &self.path) {
-                Ok(Some(s)) => return Some(Ok(s)),
-                Ok(None) => continue, // empty / deconvoluted — skip
-                Err(e) => return Some(Err(e)),
-            }
-        }
+        let mz_spectrum = self.inner.next()?;
+        Some(convert_spectrum(mz_spectrum, &self.path))
     }
 }
 
 /// Convert an mzdata `MultiLayerSpectrum` to a `ProfileSpectrum`.
 ///
-/// Returns `Ok(None)` for spectra with no usable data.
+/// Spectra with no usable data (no arrays, unreadable arrays, or no points)
+/// come back with empty `mz` and `intensity`.
 /// Returns `Err` if the spectrum is centroid-mode (Centrix requires profile).
 fn convert_spectrum(
     mz_spectrum: mzdata::spectrum::MultiLayerSpectrum,
     path: &Path,
-) -> Result<Option<ProfileSpectrum>> {
+) -> Result<ProfileSpectrum> {
     let desc = mz_spectrum.description();
 
     let native_id = desc.id.clone();
@@ -95,19 +95,18 @@ fn convert_spectrum(
 
     let peaks = mz_spectrum.peaks();
     let (mz, intensity) = match peaks {
-        RefPeakDataLevel::Missing => return Ok(None),
+        RefPeakDataLevel::Missing => (Vec::new(), Vec::new()),
 
-        RefPeakDataLevel::RawData(arrays) => {
-            let mz: Vec<f64> = match arrays.mzs() {
-                Ok(cow) => cow.iter().copied().collect(),
-                Err(_) => return Ok(None),
-            };
-            let intensity: Vec<f32> = match arrays.intensities() {
-                Ok(cow) => cow.iter().copied().collect(),
-                Err(_) => return Ok(None),
-            };
-            (mz, intensity)
-        }
+        RefPeakDataLevel::RawData(arrays) => match (arrays.mzs(), arrays.intensities()) {
+            (Ok(mz), Ok(intensity)) => (
+                mz.iter().copied().collect(),
+                intensity.iter().copied().collect(),
+            ),
+            _ => {
+                log::warn!("Unreadable data arrays in spectrum {native_id}; writing it empty");
+                (Vec::new(), Vec::new())
+            }
+        },
 
         RefPeakDataLevel::Centroid(_) | RefPeakDataLevel::Deconvoluted(_) => {
             return Err(CentrixError::NotProfileMode {
@@ -116,11 +115,7 @@ fn convert_spectrum(
         }
     };
 
-    if mz.is_empty() {
-        return Ok(None);
-    }
-
-    Ok(Some(ProfileSpectrum {
+    Ok(ProfileSpectrum {
         native_id,
         scan_number,
         ms_level,
@@ -128,14 +123,17 @@ fn convert_spectrum(
         filter_string,
         mz,
         intensity,
-    }))
+    })
 }
 
-/// Load the first `n` spectra from a profile mzML file.
+/// Load the first `n` non-empty spectra from a profile mzML file.
 ///
-/// Used during calibration to auto-detect σ and grid spacing.
+/// Used during calibration to auto-detect σ and grid spacing, which reads the
+/// grid spacing from the first spectrum of each MS level, so empty spectra are
+/// left out.
 pub fn load_first_n<P: AsRef<Path>>(path: P, n: usize) -> Result<Vec<ProfileSpectrum>> {
     ProfileReader::open(path)?
+        .filter(|r| r.as_ref().map_or(true, |s| !s.mz.is_empty()))
         .take(n)
         .collect::<Result<Vec<_>>>()
 }
