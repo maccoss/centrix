@@ -165,8 +165,8 @@ namespace Centrix.Cli
         }
 
         /// <summary>
-        /// The input opened by ProteoWizard: open formats, and the vendor formats msconvert reads, with no vendor peak
-        /// picking, so Centrix sees the profile. Filters wrap the spectra.
+        /// The input opened by ProteoWizard: a Thermo .raw or an open format, with no vendor peak picking, so Centrix sees
+        /// the profile. Filters wrap the spectra.
         /// </summary>
         private MSData Open(string input)
         {
@@ -204,18 +204,8 @@ namespace Centrix.Cli
                 "(--adaptive-rt include keeps them)");
         }
 
-        /// <summary>ProteoWizard's open formats and the vendor readers Centrix is built with.</summary>
-        internal static ReaderList Readers()
-        {
-            var readers = Pwiz.Vendor.Thermo.ThermoReaderRegistration.CreateDefaultWithThermo();
-            readers.Add(new Pwiz.Vendor.Bruker.Reader_Bruker());
-            readers.Add(new Pwiz.Vendor.Waters.Reader_Waters());
-            readers.Add(new Pwiz.Vendor.Agilent.Reader_Agilent());
-            readers.Add(new Pwiz.Vendor.Sciex.Reader_Sciex());
-            readers.Add(new Pwiz.Vendor.Shimadzu.Reader_Shimadzu());
-            readers.Add(new Pwiz.Vendor.UNIFI.Reader_UNIFI());
-            return readers;
-        }
+        /// <summary>ProteoWizard's open formats (mzML among them) and Thermo's reader, the only vendor's.</summary>
+        internal static ReaderList Readers() => Pwiz.Vendor.Thermo.ThermoReaderRegistration.CreateDefaultWithThermo();
 
         /// <summary>
         /// Each level's peak sigma, given or from the run (<see cref="CentrixSigmaCalibrator"/>: a linear ion trap's from

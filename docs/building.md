@@ -24,15 +24,16 @@ commit the two together.
 
 ## Vendor support
 
-Reading `.raw` and the other vendor formats needs the vendors' libraries, which ProteoWizard keeps in
-encrypted archives that a build opens only with `-p:IAgreeToVendorLicenses=true`, agreeing to their
-licenses (`pwiz/pwiz/data/vendor_readers/*/EULA.*.txt`). Without it every reader still recognizes its
-files, and reading one says vendor support is not enabled; open formats read either way. The
+Centrix reads one vendor's format, Thermo `.raw`, besides ProteoWizard's open formats. Reading it
+needs Thermo's library, which ProteoWizard keeps in an encrypted archive that a build opens only with
+`-p:IAgreeToVendorLicenses=true`, agreeing to its license
+(`pwiz/pwiz/data/vendor_readers/Thermo/EULA.Thermo.txt`). Without it a `.raw` is still recognized,
+and reading one says vendor support is not enabled; open formats read either way. The
 property has to be global (`-p:` on the command line, or the scripts' switches), so the ProteoWizard
 projects see it too.
 
-Thermo's library is managed code and reads `.raw` on Windows and Linux. Bruker's and Waters' have
-Linux builds; the other vendors' are Windows only.
+Thermo's library is managed code and reads `.raw` on Windows and Linux. A vendor build also builds
+ProteoWizard's Waters reader, which its lock-mass filter depends on, but Centrix does not register it.
 
 ## Build and test
 
@@ -92,7 +93,11 @@ ProteoWizard's `VendorSdkLoader` downloads that vendor's archive from GitHub, pi
 ProteoWizard commit in `pwiz.lock` and hash-checked, into a per-user cache (`%LOCALAPPDATA%\ProteoWizard\vendor`
 on Windows, `~/.local/share/ProteoWizard/vendor` on Linux). `-BundleVendorSdks` keeps the libraries
 in the package instead, for machines with no internet access; that package is for your own use, not
-for redistribution. The vendors' EULAs are in every package built with vendor support.
+for redistribution. Thermo's EULA is in every package built with vendor support.
+
+The Waters files the build brings in with ProteoWizard's lock-mass filter (its library and its
+MassLynx license key, `license.key`) are left out the same way, the key included even with
+`-BundleVendorSdks`, as Waters' license allows no redistribution. Centrix reads no Waters data.
 
 The version is `<Version>` in `Directory.Build.props`: CalVer `YY.feature.patch`, bumped only at release
 time ([release-notes/README.md](../release-notes/README.md)).
@@ -115,10 +120,16 @@ repository owner's agreement to the vendor licenses.
 
 ## Releasing
 
-1. Set `<Version>` in `Directory.Build.props`, and commit.
-2. Tag the commit `v<version>` and push the tag.
-3. CI builds, tests, packages, installs the Linux package on a clean runner, and publishes the release
-   with the three packages and generated notes.
+Versions are CalVer `YY.feature.patch`, as in Skyline-PRISM; the full process is in
+[release-notes/README.md](../release-notes/README.md).
+
+1. Rename `release-notes/RELEASE_NOTES_next.md` to `RELEASE_NOTES_v<version>.md`, delete its empty
+   headings, and start a new draft.
+2. Set `<Version>` in `Directory.Build.props`, and merge both to `main`.
+3. Tag `main` `v<version>` and push the tag.
+4. CI checks the tag against `<Version>` and its notes, builds, tests, packages, installs the Linux
+   package on a clean runner, and publishes the release with the three packages, the notes file as
+   its description.
 
 ## Code conventions
 

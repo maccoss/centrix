@@ -47,11 +47,14 @@ One-sentence summary of the release.
 ## Bug fixes
 
 ## Breaking changes
+
+## Known issues
 ```
 
 "Changes to centroids" is for anything that moves a centroid on existing data (and raised
 `ALGORITHM_VERSION`): users comparing runs across versions need to know. "Breaking changes" is for
-anything that needs action from a user (a renamed or removed option, a changed default).
+anything that needs action from a user (a renamed or removed option, a changed default). "Known
+issues" is for what does not work yet in this release.
 
 Write in the past tense ("Added", "Fixed"), lead with what a user sees, give numbers where there are
 some, and name options by their command-line flag.

@@ -1,10 +1,16 @@
 # Centrix
 
 [![CI](https://github.com/maccoss/centrix/actions/workflows/ci.yml/badge.svg)](https://github.com/maccoss/centrix/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/maccoss/centrix?display_name=tag&label=release)](https://github.com/maccoss/centrix/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/maccoss/centrix/total?label=downloads&color=success)](https://github.com/maccoss/centrix/releases)
+[![License: Apache 2.0](https://img.shields.io/github/license/maccoss/centrix?color=blue)](LICENSE)
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey.svg)](docs/building.md)
+[![ProteoWizard](https://img.shields.io/badge/reads%20with-ProteoWizard-1f6fb2.svg)](https://proteowizard.sourceforge.io/)
 
 Centroiding, and demultiplexing, for linear ion trap profile data: the Thermo Stellar, and the ion
-trap of a Fusion or an Eclipse. Centrix reads a run straight from the instrument's `.raw` file (or
-any file ProteoWizard reads) and writes a centroided mzML that any search engine reads.
+trap of a Fusion or an Eclipse. Centrix reads a run straight from the instrument's Thermo `.raw`
+file (or a profile mzML) and writes a centroided mzML that any search engine reads.
 
 **Why.** A linear ion trap resolves only to about 1 m/z: a fragment's profile peak is 0.4 to 0.8 Th
 wide at half maximum. The vendor's centroider places one centroid per local maximum, so two
@@ -51,11 +57,10 @@ needs .NET installed.
 
   `install.sh --uninstall` removes it. The unpacked folder also runs as it is.
 
-The vendor libraries that read `.raw` and the other vendor formats are not in the packages, since
-their licenses do not allow redistributing them. The first time Centrix reads a vendor file it
-downloads that vendor's library, pinned and hash-checked, from ProteoWizard into a per-user cache,
-as ProteoWizard's own tools do. Using them means agreeing to their licenses (`EULA.*.txt` beside
-`centrix`). A machine without internet access needs a package built with `-BundleVendorSdks`
+Thermo's library that reads `.raw` is not in the packages, since its license does not allow
+redistributing it. The first time Centrix reads a `.raw` it downloads the library, pinned and
+hash-checked, from ProteoWizard into a per-user cache, as ProteoWizard's own tools do. Using it means
+agreeing to Thermo's license (`EULA.Thermo.txt` beside `centrix`). A machine without internet access needs a package built with `-BundleVendorSdks`
 ([docs/building.md](docs/building.md)).
 
 ## Use
@@ -105,5 +110,6 @@ own, reading and writing through ProteoWizard (pwiz-sharp, .NET 10).
 
 ## License
 
-MIT, see [LICENSE](LICENSE). The C# sources carry Apache 2.0 headers from their ProteoWizard
-origin; ProteoWizard itself is Apache 2.0, and each vendor library has its own license.
+Apache License 2.0, see [LICENSE](LICENSE) and [NOTICE](NOTICE). The Rust releases before 26.1.0
+(tag `rust-final`) were MIT. ProteoWizard is Apache 2.0 as well, and each vendor library has its own
+license.

@@ -17,7 +17,7 @@
     first time a package reads a vendor file, ProteoWizard's VendorSdkLoader downloads that SDK,
     pinned to the ProteoWizard commit in pwiz.lock and hash-checked, into a per-user cache. With
     -BundleVendorSdks the SDKs stay in the package, for machines without internet access (an HPC
-    node); such a package is for your own use, not for redistribution. Their EULAs ship either way.
+    node); such a package is for your own use, not for redistribution. Thermo's EULA ships either way.
 
     Runs on PowerShell 7 on Windows or Linux. Fetches the pinned ProteoWizard tree first.
 
@@ -64,9 +64,14 @@ if (-not $version) { throw 'No <Version> in Directory.Build.props' }
 # Vendor SDK files, by name prefix: ProteoWizard's own table, which its installers strip by.
 $vendorPrefixes = (Get-Content -Raw (Join-Path $pwiz 'build/vendor-sdk-pins.json') | ConvertFrom-Json).vendors |
     ForEach-Object { $_.prefixes } | Sort-Object -Unique
+# Files the vendor archives carry that are not libraries, so the prefix table misses them: Waters'
+# MassLynx license key, which the build stages beside the program for ProteoWizard's Waters reader
+# (brought in by its lock-mass filter; Centrix reads no Waters data). Never packaged.
+$vendorDataFiles = @('license.key')
 $satellites = 'cs', 'de', 'es', 'fr', 'it', 'ja', 'ko', 'pl', 'pt-BR', 'ru', 'tr', 'zh-Hans', 'zh-Hant'
 
 function Test-VendorFile([string]$leaf) {
+    if ($leaf -in $vendorDataFiles) { return $true }
     if ($leaf -notmatch '\.(dll|exe|manifest|so|dylib)(\.\d+)*$') { return $false }
     $base = if ($leaf.StartsWith('lib')) { $leaf.Substring(3) } else { $leaf }
     foreach ($p in $vendorPrefixes) {
@@ -91,6 +96,7 @@ function Test-Skip([string]$relative, [bool]$windows) {
         if ($relative -match '^runtimes[\\/](?!linux-x64[\\/]|linux[\\/]|unix[\\/])') { return $true }
     }
     if ($relative -match '\.(installed|cxttmp)$') { return $true }
+    if ($leaf -in $vendorDataFiles) { return $true }   # bundled or not: Waters allows no redistribution
     if (-not $BundleVendorSdks -and (Test-VendorFile $leaf)) { return $true }
     return $false
 }
@@ -133,15 +139,15 @@ function New-Stage([string]$rid) {
     }
     Write-Host "    $kept files kept, $skipped left out"
 
-    Copy-Item (Join-Path $root 'README.md'), (Join-Path $root 'LICENSE') $stage
+    Copy-Item (Join-Path $root 'README.md'), (Join-Path $root 'LICENSE'), (Join-Path $root 'NOTICE') $stage
     if (-not $windows) {
         # Unix line endings, whatever the checkout's: bash reads a CR as part of each line.
         $install = (Get-Content -Raw (Join-Path $root 'installer/install.sh')).Replace("`r`n", "`n")
         [System.IO.File]::WriteAllText((Join-Path $stage 'install.sh'), $install)
     }
     if ($IAgreeToVendorLicenses) {
-        Get-ChildItem (Join-Path $pwiz 'pwiz/data/vendor_readers') -Filter 'EULA.*.txt' -Recurse -File |
-            ForEach-Object { Copy-Item $_.FullName $stage }
+        # Thermo's is the one vendor library Centrix reads with.
+        Copy-Item (Join-Path $pwiz 'pwiz/data/vendor_readers/Thermo/EULA.Thermo.txt') $stage
     }
     return $stage
 }
