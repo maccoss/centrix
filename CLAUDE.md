@@ -81,7 +81,7 @@ any reader can feed them. Only `src/Centrix` knows ProteoWizard.
 ### The peak sigma follows the point spacing
 On a linear ion trap, sigma = 1.1 point spacings (0.22 Th at the Stellar's 200 kTh/s MS2), from a
 sweep searched with entrapment; elsewhere measured from isolated peaks. Not from filter strings: the
-Stellar's MS2 carry "Z" (its Adaptive RT annotation) instead of a scan-rate letter.
+Stellar's MS2 carry "Z" (its 200 kTh/s code, which elsewhere means a zoom scan).
 
 ### Calibrate measures, run does not
 `centrix calibrate` samples up to 3,000 spectra and reports each level's measured sigma (isolated-peak
@@ -136,12 +136,12 @@ clone, used only to test `.raw` reading) samples full scans every 1/12 Th (not i
 measured) and data-dependent zoom scans every 0.02 Th; one sigma per MS level serves both.
 
 ### The Stellar's zoom-scan label and Adaptive RT
-The Stellar's firmware writes its ordinary DIA MS2 as zoom scans (filter "Z", ProteoWizard's MS:1000497),
-a bug reported to Thermo. On Stellar runs `StellarZoomLabelFix` (applied in `Conversion.Open`) removes the
-term and the filter's "Z" from MS2 no wider than `--adaptive-rt-width` (10 Th) and records it;
-`--keep-zoom-label` disables it. Wider MS2 are the Adaptive RT alignment spectra: they keep the label,
-are recognized by width (never by "Z"), and are excluded by default (`SpectrumListFilter` in
-`Conversion.ExcludeAdaptiveRt`); `--adaptive-rt include` keeps them, centroided, outside demux.
+"Z" in a Stellar filter string is its code for 200 kTh/s (confirmed by Thermo), on DIA and Adaptive RT
+MS2 alike; ProteoWizard reads it as a zoom scan (MS:1000497). On Stellar runs `StellarZoomLabelFix`
+(applied in `Conversion.Open`) removes that term from every spectrum and records it; the filter strings
+stay as recorded, "Z" included. `--keep-zoom-label` disables it. MS2 wider than `--adaptive-rt-width`
+(10 Th) are the Adaptive RT alignment spectra: recognized by width (never by "Z"), excluded by default
+(`SpectrumListFilter` in `Conversion.ExcludeAdaptiveRt`); `--adaptive-rt include` keeps them, centroided, outside demux.
 
 Stellar intensities are rates (ions/s); ions = intensity x fill time (s) / 0.98 (the ion trap response).
 Thermo onboard centroids: about one per nominal mass; a Centrix centroid's intensity is its peak's

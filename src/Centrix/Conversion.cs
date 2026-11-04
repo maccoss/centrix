@@ -131,8 +131,8 @@ namespace Centrix.Cli
             _log.Info($"Wrote {output} in {clock.Elapsed.TotalSeconds:F0} s");
             if (_zoomLabelFix != null && _zoomLabelFix.Relabelled > 0)
             {
-                _log.Info($"  zoom-scan label removed from {_zoomLabelFix.Relabelled:N0} Stellar DIA MS2 " +
-                    "(its firmware writes them as zoom scans; --keep-zoom-label keeps it)");
+                _log.Info($"  zoom scan term removed from {_zoomLabelFix.Relabelled:N0} Stellar spectra: their filter strings' Z " +
+                    "is the 200 kTh/s scan-rate code (--keep-zoom-label keeps the term)");
             }
             if (centrix != null)
             {
@@ -179,7 +179,7 @@ namespace Centrix.Cli
             }
             bool stellar = SpectrumRouting.IsStellar(msd);
             _zoomLabelFix = stellar && !_options.KeepZoomLabel
-                ? new StellarZoomLabelFix(msd.Run.SpectrumList, _options.AdaptiveRtWidthTh)
+                ? new StellarZoomLabelFix(msd.Run.SpectrumList)
                 : null;
             if (_zoomLabelFix != null)
                 msd.Run.SpectrumList = _zoomLabelFix;

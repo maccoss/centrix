@@ -19,7 +19,6 @@
  */
 
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading;
 using Pwiz.Analysis;
 using Pwiz.Data.Common.Cv;
@@ -30,28 +29,24 @@ using Pwiz.Data.MsData.Spectra;
 namespace Centrix.Cli
 {
     /// <summary>
-    /// Takes the zoom-scan label off a Thermo Stellar's DIA spectra. The Stellar's firmware writes its ordinary DIA MS2
-    /// to the .raw file as zoom scans (a bug reported to Thermo): every one has "Z" in its filter string
-    /// ("ITMS + p NSI Z ms2 411.4369@hcd20.00 [200.0000-1200.0000]"), and ProteoWizard faithfully reports each as a zoom
-    /// scan (MS:1000497), which they are not. On a Stellar run, an MS2 no wider than any DIA window
-    /// (<see cref="SpectrumRouting.IsWiderThan"/>) loses the term and the "Z"; the wider ones, its Adaptive RT
-    /// alignment spectra, which the Stellar does mark that way, keep both. The processing record says so.
+    /// Takes ProteoWizard's zoom-scan term off a Thermo Stellar's spectra. The Stellar marks every spectrum it scans at
+    /// 200 kTh/s with "Z" in its filter string (Thermo's scan-rate code for that rate, where the other rates have n, r
+    /// and t): its DIA MS2 ("ITMS + p NSI Z ms2 411.4369@hcd20.00 [200.0000-1200.0000]") and its Adaptive RT alignment
+    /// spectra alike. ProteoWizard reads a Thermo filter's "Z" as a zoom scan and reports one (MS:1000497), but the
+    /// Stellar has no zoom scans: 200 kTh/s is its fastest scan, not a slow narrow one. On a Stellar run the term is
+    /// removed, from a referenceable parameter group too (detached, its other terms kept), wherever it appears; the
+    /// filter string keeps its "Z" as Thermo recorded it, since it says the scan rate. The processing record says so.
     /// </summary>
     internal sealed class StellarZoomLabelFix : SpectrumListWrapper
     {
-        private static readonly Regex ZOOM_IN_FILTER = new Regex(@" Z (?=ms\d*\b)");
-
-        private readonly double _adaptiveRtWidthTh;
         private readonly DataProcessing _dataProcessing;
         private readonly int[] _relabelledAt;   // 1 for each spectrum relabelled, so one read many times counts once
         private long _relabelled;
 
         /// <param name="inner">A Stellar run's spectra.</param>
-        /// <param name="adaptiveRtWidthTh">MS2 wider than this are Adaptive RT spectra, and keep the label.</param>
-        public StellarZoomLabelFix(ISpectrumList inner, double adaptiveRtWidthTh)
+        public StellarZoomLabelFix(ISpectrumList inner)
             : base(inner)
         {
-            _adaptiveRtWidthTh = adaptiveRtWidthTh;
             _relabelledAt = new int[inner.Count];
             var innerProcessing = inner.DataProcessing;
             _dataProcessing = new DataProcessing(innerProcessing?.Id ?? "pwiz_Reader_conversion");
@@ -63,8 +58,8 @@ namespace Centrix.Cli
                 Software = _dataProcessing.ProcessingMethods.FirstOrDefault()?.Software,
             };
             method.Set(CVID.MS_data_transformation);
-            method.UserParams.Add(new UserParam("Centrix: zoom-scan label removed from Stellar DIA MS2",
-                "the Stellar writes its DIA spectra as zoom scans; Adaptive RT spectra keep the label"));
+            method.UserParams.Add(new UserParam("Centrix: zoom scan term removed from Stellar spectra",
+                "the filter strings' Z is the Stellar's 200 kTh/s scan-rate code, not a zoom scan; the filter strings are as recorded"));
             _dataProcessing.ProcessingMethods.Add(method);
         }
 
@@ -76,14 +71,14 @@ namespace Centrix.Cli
         public override Spectrum GetSpectrum(int index, bool getBinaryData = false)
         {
             var spectrum = Inner.GetSpectrum(index, getBinaryData);
-            Tally(index, Relabel(spectrum, _adaptiveRtWidthTh));
+            Tally(index, Relabel(spectrum));
             return spectrum;
         }
 
         public override Spectrum GetSpectrum(int index, DetailLevel detailLevel)
         {
             var spectrum = Inner.GetSpectrum(index, detailLevel);
-            Tally(index, Relabel(spectrum, _adaptiveRtWidthTh));
+            Tally(index, Relabel(spectrum));
             return spectrum;
         }
 
@@ -94,34 +89,16 @@ namespace Centrix.Cli
         }
 
         /// <summary>
-        /// Removes a DIA MS2's zoom-scan term and the "Z" of its filter string, from a referenceable parameter group too
-        /// (detached, its other terms kept: <see cref="SpectrumRouting.DetachGroupsHolding"/>); true when there was a
-        /// label to remove.
+        /// Removes a spectrum's zoom-scan term, from a referenceable parameter group too (detached, its other terms kept:
+        /// <see cref="SpectrumRouting.DetachGroupsHolding"/>); true when there was one. The filter string is left alone.
         /// </summary>
-        internal static bool Relabel(Spectrum spectrum, double adaptiveRtWidthTh)
+        internal static bool Relabel(Spectrum spectrum)
         {
-            if (spectrum.Params.CvParamValueOrDefault(CVID.MS_ms_level, 0) < 2 || SpectrumRouting.IsWiderThan(spectrum, adaptiveRtWidthTh))
-                return false;
             var terms = spectrum.Params;
-            bool removed = false;
-            if (terms.HasCVParam(CVID.MS_zoom_scan))
-            {
-                SpectrumRouting.DetachGroupsHolding(terms, CVID.MS_zoom_scan);
-                removed = terms.CVParams.RemoveAll(p => p.Cvid == CVID.MS_zoom_scan) > 0;
-            }
-            foreach (var scan in spectrum.ScanList.Scans)
-            {
-                // The filter string may come from a referenceable group the scan shares with others.
-                var filter = scan.CvParam(CVID.MS_filter_string);
-                if (filter.Cvid != CVID.MS_filter_string || !ZOOM_IN_FILTER.IsMatch(filter.Value))
-                    continue;
-                SpectrumRouting.DetachGroupsHolding(scan, CVID.MS_filter_string);
-                int own = scan.CVParams.FindIndex(p => p.Cvid == CVID.MS_filter_string);
-                // A new term rather than the old one changed: the reader may share it with the spectrum it came from.
-                scan.CVParams[own] = new CVParam(CVID.MS_filter_string, ZOOM_IN_FILTER.Replace(scan.CVParams[own].Value, " "));
-                removed = true;
-            }
-            return removed;
+            if (!terms.HasCVParam(CVID.MS_zoom_scan))
+                return false;
+            SpectrumRouting.DetachGroupsHolding(terms, CVID.MS_zoom_scan);
+            return terms.CVParams.RemoveAll(p => p.Cvid == CVID.MS_zoom_scan) > 0;
         }
     }
 }

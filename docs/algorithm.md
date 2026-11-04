@@ -141,20 +141,19 @@ method mixing scan types within a level.
 ## The Stellar's filter strings: "Z" and Adaptive RT
 
 Rust Centrix read the scan rate from a letter in the filter string (n, r, t, u). The Stellar's MS1
-carry it ("ITMS + p NSI r Full ms"), but its MS2 carry "Z" instead
-("ITMS + p NSI Z ms2 480.4683@hcd20.00 [200.0000-1200.0000]"). In a Thermo filter "Z" is a zoom
-scan, and ProteoWizard reports it as one (MS:1000497), but these are not zoom scans: the Stellar's
-firmware writes its ordinary DIA profile spectra to the `.raw` file as zoom scans, a bug reported to
-Thermo. Every DIA MS2 of the 2026-10-09 window-width HeLa runs carries it (in the 2 Th TR01 run,
-138,803 MS2 of its 139,356 spectra; the other 553 are MS1, labelled correctly). The annotation the Stellar means is its Adaptive RT
-alignment spectra's. So:
+carry one ("ITMS + p NSI r Full ms", 67 kTh/s), and its MS2 carry "Z"
+("ITMS + p NSI Z ms2 480.4683@hcd20.00 [200.0000-1200.0000]"), which Thermo has confirmed is the
+Stellar's code for 200 kTh/s: every spectrum scanned at that rate carries it, DIA and Adaptive RT
+alike. Every DIA MS2 of the 2026-10-09 window-width HeLa runs carries it (in the 2 Th TR01 run,
+138,803 MS2 of its 139,356 spectra; the other 553 are MS1). Elsewhere in a Thermo filter "Z" is a
+zoom scan, and ProteoWizard reports one (MS:1000497), though the Stellar has none. So:
 - the scan rate comes from the point spacing, never from the filter;
 - no spectrum is dropped for carrying "Z";
-- on a Stellar run, DIA MS2 come out without the label, the term and the filter's "Z" both removed
-  and the correction named in the processing record (`StellarZoomLabelFix`; `--keep-zoom-label`
-  writes them as read);
-- Adaptive RT spectra are recognized by their width (20 or 50 m/z, where Stellar DIA never exceeds
-  10), keep the label, and are left out of the output by default ([usage](usage.md#the-stellars-zoom-scan-label)).
+- on a Stellar run, the zoom scan term is removed and the correction named in the processing record
+  (`StellarZoomLabelFix`; `--keep-zoom-label` keeps it); the filter strings are written as recorded,
+  "Z" included;
+- Adaptive RT spectra, which carry "Z" too, are recognized by their width (20 or 50 m/z, where
+  Stellar DIA never exceeds 10) and left out of the output by default ([usage](usage.md#the-stellars-zoom-scan-label)).
 
 ProteoWizard's Thermo reader also looks, for every MS2, for a preceding zoom MS1 to take a triple-play
 precursor charge from; on these runs it finds none and walks back to the run's start each time, which

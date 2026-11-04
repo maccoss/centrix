@@ -283,9 +283,10 @@ namespace Centrix.Tests
         [TestMethod]
         public void TestStellarZoomLabel()
         {
-            // The Stellar writes its DIA MS2 as zoom scans: the slice's 14 MS2 carry the term and the "Z". Through the
-            // command they come out without either, their MS1 untouched, the correction in the processing record; with
-            // --keep-zoom-label as read.
+            // The Stellar marks its 200 kTh/s scans "Z", Thermo's code for that scan rate, which ProteoWizard reads as a
+            // zoom scan: the slice's 14 MS2 carry the term. Through the command they come out without it, their filter
+            // strings as recorded ("Z" kept), their MS1 untouched, the correction in the processing record; with
+            // --keep-zoom-label the term stays.
             string input = TestData.Path("Centrix", PROFILE_SLICE);
             using (var read = TestData.Open(input))
             {
@@ -294,15 +295,15 @@ namespace Centrix.Tests
                 Assert.AreEqual(14, ms2.Count);
                 Assert.IsTrue(ms2.All(s => s.Params.HasCVParam(CVID.MS_zoom_scan) && FilterOf(s).Contains(" Z ms2 ")));
 
-                // An Adaptive RT spectrum, wider than any DIA window, keeps its label.
+                // An Adaptive RT spectrum, wider than any DIA window, is a 200 kTh/s scan too: its term goes as well.
                 var wide = ms2[0];
                 wide.Precursors[0].IsolationWindow.Set(CVID.MS_isolation_window_lower_offset, 25.0, CVID.MS_m_z);
                 wide.Precursors[0].IsolationWindow.Set(CVID.MS_isolation_window_upper_offset, 25.0, CVID.MS_m_z);
-                Assert.IsFalse(StellarZoomLabelFix.Relabel(wide, 10));
-                Assert.IsTrue(wide.Params.HasCVParam(CVID.MS_zoom_scan));
-                Assert.IsTrue(StellarZoomLabelFix.Relabel(ms2[1], 10));
-                Assert.IsFalse(StellarZoomLabelFix.Relabel(ms2[1], 10), "a second pass finds nothing to remove");
-                StringAssert.StartsWith(FilterOf(ms2[1]), "ITMS + p NSI ms2 ");
+                Assert.IsTrue(StellarZoomLabelFix.Relabel(wide));
+                Assert.IsFalse(wide.Params.HasCVParam(CVID.MS_zoom_scan));
+                Assert.IsTrue(StellarZoomLabelFix.Relabel(ms2[1]));
+                Assert.IsFalse(StellarZoomLabelFix.Relabel(ms2[1]), "a second pass finds nothing to remove");
+                StringAssert.StartsWith(FilterOf(ms2[1]), "ITMS + p NSI Z ms2 ");
             }
 
             string directory = TestData.TempDirectory();
@@ -318,7 +319,7 @@ namespace Centrix.Tests
                     new Conversion(options, new Log(true, false)).Run(input, output);
                     using var written = TestData.Open(output);
                     var spectra = written.Run.SpectrumList;
-                    int labelled = 0, ms1 = 0;
+                    int labelled = 0, ms1 = 0, ms2 = 0;
                     for (int i = 0; i < spectra.Count; i++)
                     {
                         var spectrum = spectra.GetSpectrum(i);
@@ -328,15 +329,16 @@ namespace Centrix.Tests
                             StringAssert.StartsWith(FilterOf(spectrum), "ITMS + p NSI r Full ms ");
                             continue;
                         }
-                        bool zoom = spectrum.Params.HasCVParam(CVID.MS_zoom_scan);
-                        Assert.AreEqual(zoom, FilterOf(spectrum).Contains(" Z ms2 "), FilterOf(spectrum));
-                        if (zoom)
+                        ms2++;
+                        StringAssert.StartsWith(FilterOf(spectrum), "ITMS + p NSI Z ms2 ", "the filter string as recorded");
+                        if (spectrum.Params.HasCVParam(CVID.MS_zoom_scan))
                             labelled++;
                     }
                     Assert.AreEqual(2, ms1);
+                    Assert.AreEqual(14, ms2);
                     Assert.AreEqual(keep ? 14 : 0, labelled);
                     bool recorded = written.DataProcessings.SelectMany(d => d.ProcessingMethods)
-                        .Any(m => m.UserParams.Any(u => u.Name.Contains("zoom-scan label removed")));
+                        .Any(m => m.UserParams.Any(u => u.Name.Contains("zoom scan term removed")));
                     Assert.AreEqual(!keep, recorded);
                 }
             }
@@ -447,7 +449,7 @@ namespace Centrix.Tests
         {
             // Terms a spectrum takes from a referenceable parameter group survive what Centrix changes: the group is
             // detached, its other terms copied (the MS level among them), the group itself, which other spectra share,
-            // untouched; a filter string in a scan's group is rewritten the same way.
+            // untouched; a filter string in a scan's group is left as it is.
             var shared = new ParamGroup { Id = "common" };
             shared.Set(CVID.MS_profile_spectrum);
             shared.Set(CVID.MS_ms_level, 2);
@@ -466,12 +468,13 @@ namespace Centrix.Tests
             precursor.IsolationWindow.Set(CVID.MS_isolation_window_upper_offset, 1.0, CVID.MS_m_z);
             spectrum.Precursors.Add(precursor);
 
-            Assert.IsTrue(StellarZoomLabelFix.Relabel(spectrum, 10));
+            Assert.IsTrue(StellarZoomLabelFix.Relabel(spectrum));
             Assert.IsFalse(spectrum.Params.HasCVParam(CVID.MS_zoom_scan));
             Assert.AreEqual(2, spectrum.Params.CvParamValueOrDefault(CVID.MS_ms_level, 0));
             Assert.IsTrue(spectrum.Params.HasCVParam(CVID.MS_positive_scan));
             Assert.IsTrue(SpectrumRouting.IsProfile(spectrum));
-            Assert.AreEqual("ITMS + p NSI ms2 411.4369@hcd20.00 [200.0000-1200.0000]", scan.CvParamValueOrDefault(CVID.MS_filter_string, ""));
+            Assert.AreEqual("ITMS + p NSI Z ms2 411.4369@hcd20.00 [200.0000-1200.0000]", scan.CvParamValueOrDefault(CVID.MS_filter_string, ""));
+            Assert.AreEqual(1, scan.ParamGroups.Count, "the scan's filter group stays attached");
             Assert.AreEqual(2, scan.CvParamValueOrDefault(CVID.MS_preset_scan_configuration, 0));
             SpectrumRouting.MarkCentroid(spectrum);
             Assert.IsFalse(SpectrumRouting.IsProfile(spectrum));
