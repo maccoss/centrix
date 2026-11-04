@@ -123,7 +123,7 @@ data ([algorithm](algorithm.md#the-peak-sigma)).
 On the 16-spectrum Stellar slice the tests use (`tests/Centrix.Tests/Data/Centrix`):
 
 ```
-centrix 2.0.0, 32 threads
+centrix 26.1.0, 32 threads
 Opened stellar-2th-profile-slice.mzML: 16 spectra in 0 s
 Centrix MS1 peak sigma 0.073 Th (67 kTh/s scan rate, from its point spacing); MS2 0.220 Th (200 kTh/s scan rate, from its point spacing)
 MS2 windows: 14 into 14 bins, 1-fold (non-overlapping)

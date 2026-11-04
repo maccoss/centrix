@@ -66,12 +66,13 @@ Source: "{#StagingDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 
 [Registry]
 ; The PATH entry, in the user's environment or the machine's, as the install is per-user or
-; per-machine. Appended only when absent; the uninstaller removes it (see [Code]).
+; per-machine. Appended only when absent; the uninstaller removes it (see [Code]). A Check takes only function
+; calls joined by and/or/not, so the install mode is NeedsAddPath's argument.
 Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; \
-    Check: IsAdminInstallMode = False and NeedsAddPath(ExpandConstant('{app}')); Tasks: addtopath
+    Check: NeedsAddPath(False); Tasks: addtopath
 Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; \
     ValueName: "Path"; ValueData: "{olddata};{app}"; \
-    Check: IsAdminInstallMode and NeedsAddPath(ExpandConstant('{app}')); Tasks: addtopath
+    Check: NeedsAddPath(True); Tasks: addtopath
 
 [Code]
 function PathKey(var Root: Integer): String;
@@ -88,11 +89,16 @@ begin
   end;
 end;
 
-function NeedsAddPath(Dir: String): Boolean;
+{ True when this install is per-machine as PerMachine says and the install directory is not yet on its PATH. }
+function NeedsAddPath(PerMachine: Boolean): Boolean;
 var
   Root: Integer;
-  Key, Path: String;
+  Key, Path, Dir: String;
 begin
+  Result := False;
+  if PerMachine <> IsAdminInstallMode then
+    exit;
+  Dir := ExpandConstant('{app}');
   Key := PathKey(Root);
   if not RegQueryStringValue(Root, Key, 'Path', Path) then
   begin

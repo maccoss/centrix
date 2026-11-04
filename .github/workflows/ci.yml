@@ -13,6 +13,8 @@ on:
     branches: ['**']
     tags: ['v*']
   pull_request:
+  # Run by hand on a branch to build and install the packages without a push to main.
+  workflow_dispatch:
 
 env:
   DOTNET_NOLOGO: 'true'
@@ -80,11 +82,23 @@ jobs:
 
   package:
     name: Package
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')))
     needs: [build-and-test, thermo-smoke]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      # On a tag, before anything is built: the tag must be v<Version> and its release notes must exist, since the
+      # release publishes them as its description (release-notes/README.md).
+      - name: Check the tag against the version and its release notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          version="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props | head -1)"
+          [[ "${GITHUB_REF_NAME}" == "v${version}" ]] || { echo "::error::Tag ${GITHUB_REF_NAME} does not match version ${version} in Directory.Build.props"; exit 1; }
+          notes="release-notes/RELEASE_NOTES_${GITHUB_REF_NAME}.md"
+          [[ -f "$notes" ]] || { echo "::error::No $notes: rename release-notes/RELEASE_NOTES_next.md to it before tagging"; exit 1; }
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
@@ -140,12 +154,14 @@ jobs:
         with:
           name: packages
           path: dist
-      - name: Check the tag against the version
-        shell: bash
-        run: |
-          version="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props | head -1)"
-          [[ "${GITHUB_REF_NAME}" == "v${version}" ]] || { echo "Tag ${GITHUB_REF_NAME} does not match version ${version} in Directory.Build.props"; exit 1; }
+      # The release notes are the release's description, verbatim; a version with alpha, beta or rc is a prerelease.
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" dist/* --title "Centrix ${GITHUB_REF_NAME#v}" --generate-notes
+        shell: bash
+        run: |
+          notes="release-notes/RELEASE_NOTES_${GITHUB_REF_NAME}.md"
+          [[ -f "$notes" ]] || { echo "::error::No $notes"; exit 1; }
+          prerelease=()
+          [[ "${GITHUB_REF_NAME}" =~ (alpha|beta|rc) ]] && prerelease=(--prerelease)
+          gh release create "${GITHUB_REF_NAME}" dist/* --title "Centrix ${GITHUB_REF_NAME#v}" --notes-file "$notes" "${prerelease[@]}"

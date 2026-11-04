@@ -94,7 +94,8 @@ on Windows, `~/.local/share/ProteoWizard/vendor` on Linux). `-BundleVendorSdks` 
 in the package instead, for machines with no internet access; that package is for your own use, not
 for redistribution. The vendors' EULAs are in every package built with vendor support.
 
-The version is `<Version>` in `Directory.Build.props`.
+The version is `<Version>` in `Directory.Build.props`: CalVer `YY.feature.patch`, bumped only at release
+time ([release-notes/README.md](../release-notes/README.md)).
 
 ## Continuous integration
 
@@ -104,9 +105,9 @@ The version is `<Version>` in `Directory.Build.props`.
 |---|---|---|
 | Build and test | every push and pull request | build and run the tests on Windows and Ubuntu, without vendor support (the tests read mzML) |
 | Read a Thermo .raw | every push and pull request | a vendor build on Windows and Ubuntu runs `scripts/smoke-test.ps1`: ProteoWizard's Thermo test file (an LTQ Velos run in the pwiz tree) calibrated and converted, its mzML checked (85 spectra, none left profile, Centrix's processing record, a complete index) |
-| Package | pushes to `main` and `v*` tags | `package.ps1 -IAgreeToVendorLicenses -Setup` on Windows (Inno Setup from Chocolatey if the runner lacks it); the zip, tarball and installer as the run's `packages` artifact |
+| Package | pushes to `main`, `v*` tags, and by hand (Run workflow) | `package.ps1 -IAgreeToVendorLicenses -Setup` on Windows (Inno Setup from Chocolatey if the runner lacks it); the zip, tarball and installer as the run's `packages` artifact |
 | Install the Linux package | after Package | unpack the tarball on a clean Ubuntu runner, `install.sh`, and run the smoke test with the installed `centrix`, which fetches the Thermo SDK on first use |
-| Release | `v*` tags | check the tag against `<Version>` and attach the packages to a GitHub release |
+| Release | `v*` tags | check the tag against `<Version>` (before packaging) and publish a GitHub release with the packages, its description `release-notes/RELEASE_NOTES_<tag>.md` |
 
 The pinned ProteoWizard tree is cached between runs, keyed on `pwiz.lock` and the sparse paths. The
 vendor jobs pass `-p:IAgreeToVendorLicenses=true`; the workflow's header records that this is the

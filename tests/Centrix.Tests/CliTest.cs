@@ -110,6 +110,8 @@ namespace Centrix.Tests
                 Assert.ThrowsException<ArgumentException>(() => CentrixOptions.Parse(bad), string.Join(" ", bad));
             }
             Assert.IsTrue(CentrixOptions.Parse(new[] { "--help" }).ShowHelp);
+            // The version is CalVer YY.feature.patch as released: no padding to four parts, no "+<commit>".
+            StringAssert.Matches(CentrixVersion.Current, new System.Text.RegularExpressions.Regex(@"^\d{2}\.\d+\.\d+(-[0-9A-Za-z.]+)?$"));
             // A noise step of 0 would loop forever: refused by its option's name, and by the centroider itself.
             var noStep = Assert.ThrowsException<ArgumentException>(() => CentrixOptions.Parse(new[] { "a", "--noise-step-da", "0" }));
             StringAssert.Contains(noStep.Message, "--noise-step-da");

@@ -6,7 +6,7 @@ Three HeLa runs (`20261009_Stellar_WWopt_2Th_400-900mz_24min_profile_TR01`-`TR03
 400-900 m/z, 24-minute gradient, profile mode; MS1 at 67 kTh/s, MS2 at 200 kTh/s), searched two ways
 with otherwise identical settings:
 - **Vendor**: the `.raw` files read by Osprey directly, so with Thermo's centroids.
-- **Centrix**: the same runs converted by `centrix` 2.0.0 with its defaults (MS1 sigma 0.073 Th, MS2
+- **Centrix**: the same runs converted by `centrix` (the .NET port, released as 26.1.0) with its defaults (MS1 sigma 0.073 Th, MS2
   0.22 Th, both from the point spacing; the Stellar's zoom-scan label removed).
 
 Osprey 26.1.1.307 (ProteoWizard master 4ec653c0d4), unit resolution. Each arm predicted its library

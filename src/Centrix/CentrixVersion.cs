@@ -22,11 +22,28 @@ using System.Reflection;
 
 namespace Centrix.Cli
 {
-    /// <summary>Centrix's version, as the build stamped it.</summary>
+    /// <summary>
+    /// Centrix's version as it is released, CalVer <c>YY.feature.patch</c> (<c>26.1.0</c>, never <c>26.1.0.0</c>):
+    /// the informational version, MSBuild's verbatim copy of <c>&lt;Version&gt;</c>, without any "+&lt;commit&gt;"
+    /// build metadata. The assembly version is padded to four parts, so it is only the fallback, its padding dropped.
+    /// </summary>
     internal static class CentrixVersion
     {
-        public static string Current { get; } =
-            typeof(CentrixVersion).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ??
-            typeof(CentrixVersion).Assembly.GetName().Version?.ToString() ?? "unknown";
+        public static string Current { get; } = Resolve();
+
+        private static string Resolve()
+        {
+            var assembly = typeof(CentrixVersion).Assembly;
+            string informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+            if (!string.IsNullOrWhiteSpace(informational))
+            {
+                int plus = informational.IndexOf('+');
+                string trimmed = (plus >= 0 ? informational.Substring(0, plus) : informational).Trim();
+                if (trimmed.Length > 0)
+                    return trimmed;
+            }
+            var version = assembly.GetName().Version;
+            return version == null ? "unknown" : version.Major + "." + version.Minor + "." + System.Math.Max(version.Build, 0);
+        }
     }
 }
