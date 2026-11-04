@@ -42,7 +42,10 @@
     <Product>Centrix</Product>
     <Authors>MacCoss Lab, University of Washington</Authors>
     <Copyright>Copyright (c) University of Washington 2026</Copyright>
-    <Version>2.0.0</Version>
+    <!-- CalVer YY.feature.patch (release-notes/README.md), bumped only at release time. The release
+         workflow fails a tag v<version> that does not equal it. No "+<commit>" suffix: the version
+         string is the one in the processing record of every mzML Centrix writes. -->
+    <Version>26.1.0</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 

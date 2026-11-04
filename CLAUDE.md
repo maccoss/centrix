@@ -37,9 +37,16 @@ mzML (CI runs it on Windows and Linux, and against the installed Linux package).
 ## CI and releases
 
 `.github/workflows/ci.yml`: build+test (Windows, Ubuntu, no vendor), Thermo smoke (vendor build, both
-OSes), package (main and `v*` tags: zip, tarball, Inno Setup installer), install the Linux package on a
-clean runner and smoke it, release (`v*` tag must equal `v<Version>` from `Directory.Build.props`).
-To release: bump `<Version>`, commit, tag `v<version>`, push the tag.
+OSes), package (main, `v*` tags and by hand: zip, tarball, Inno Setup installer), install the Linux
+package on a clean runner and smoke it, release (`v*` tag must equal `v<Version>` from
+`Directory.Build.props`, and `release-notes/RELEASE_NOTES_v<version>.md` must exist: it is the release's
+description).
+
+Versions are CalVer `YY.feature.patch` (26.1.0 was the first .NET release), as in Skyline-PRISM, bumped
+only at release time. Note user-visible changes in `release-notes/RELEASE_NOTES_next.md` as they land.
+To release (release-notes/README.md): rename the draft to `RELEASE_NOTES_v<version>.md`, drop its empty
+headings, start a new draft, bump `<Version>`, merge to `main`, then tag `v<version>` and push the tag.
+Never create the GitHub release by hand.
 
 ## Layout
 
