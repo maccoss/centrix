@@ -198,7 +198,8 @@ namespace Centrix.Tests
             // The vendor mode sends every profile spectrum to the fallback; a centroided spectrum passes through.
             var raw = TestData.Open(input).Run.SpectrumList;
             var cwt = new SpectrumList_PeakPicker(raw, new CwtPeakDetector(1.0, 0, 0.1), false, "1-");
-            var vendor = new CentrixSpectrumList(raw, cwt, ms1, ms2, CentroidMode.vendor, 2, new Software("Centrix"), 4);
+            var vendor = new CentrixSpectrumList(raw, new Lazy<ISpectrumList>(() => cwt), ms1, ms2, CentroidMode.vendor, 2,
+                new Software("Centrix"), 4);
             for (int i = 0; i < vendor.Count; i++)
                 Assert.IsFalse(SpectrumRouting.IsProfile(vendor.GetSpectrum(i, true)));
             Assert.AreEqual(0, vendor.CentrixSpectra);
@@ -354,6 +355,139 @@ namespace Centrix.Tests
         private static string FilterOf(Pwiz.Data.MsData.Spectra.Spectrum spectrum)
         {
             return spectrum.ScanList.Scans[0].CvParamValueOrDefault(CVID.MS_filter_string, string.Empty);
+        }
+
+        [TestMethod]
+        public void TestVendorCentroidsUnderWrappers()
+        {
+            // pwiz's peak picker takes the vendor's centroids only from the reader's own list. Centrix's wrappers (a
+            // --filter, and on a Stellar's file the zoom-label fix and the Adaptive RT exclusion) go on top of it, so
+            // --centroid vendor writes the vendor's centroids and keeps the wrappers' work. The slice stands in for a .raw
+            // under a list that centroids the way a vendor reader does. Every centroider here rewrites the spectra the
+            // reader keeps, so each check reads its own copy of the slice.
+            string input = TestData.Path("Centrix", PROFILE_SLICE);
+            var conversion = new Conversion(CentrixOptions.Parse(new[] { input, "--filter", "msLevel 1-" }), new Log(true, false));
+            var opened = new List<MSData>();
+            (MSData Msd, VendorCentroidedSpectra Vendor) Fresh()
+            {
+                var msd = TestData.Open(input);
+                var copy = TestData.Open(input);
+                opened.Add(msd);
+                opened.Add(copy);
+                return (msd, new VendorCentroidedSpectra(msd.Run.SpectrumList, copy.Run.SpectrumList));
+            }
+            bool AnyMarked(ISpectrumList list) =>
+                Enumerable.Range(0, list.Count).Any(i => VendorCentroidedSpectra.IsMarked(list.GetSpectrum(i, true)));
+            try
+            {
+                var (msd, vendor) = Fresh();
+                var picked = conversion.Wrap(msd, Conversion.VendorPicker(vendor), false);
+                Assert.AreEqual(16, picked.Count);
+                for (int i = 0; i < picked.Count; i++)
+                {
+                    var spectrum = picked.GetSpectrum(i, true);
+                    Assert.IsTrue(VendorCentroidedSpectra.IsMarked(spectrum), spectrum.Id);
+                    Assert.IsFalse(SpectrumRouting.IsProfile(spectrum), spectrum.Id);
+                    Assert.IsFalse(spectrum.Params.HasCVParam(CVID.MS_zoom_scan), spectrum.Id);
+                }
+
+                // The picker over the wrappers, as 26.1.0 put it, never reaches the vendor's centroids: pwiz's wavelet
+                // picker centroids every spectrum instead.
+                (msd, vendor) = Fresh();
+                Assert.IsFalse(AnyMarked(Conversion.VendorPicker(conversion.Wrap(msd, vendor, false))));
+
+                // In auto mode the spectra Centrix is not for are the vendor's centroids, index for index with the
+                // spectra Centrix reads; pwiz's wavelet picker serves a file with no vendor centroids.
+                (msd, vendor) = Fresh();
+                var source = conversion.Wrap(msd, vendor, false);
+                var fallback = conversion.Fallback(msd, vendor, source);
+                Assert.AreEqual(source.Count, fallback.Count);
+                for (int i = 0; i < fallback.Count; i++)
+                {
+                    Assert.AreEqual(source.SpectrumIdentity(i).Id, fallback.SpectrumIdentity(i).Id);
+                    Assert.IsTrue(VendorCentroidedSpectra.IsMarked(fallback.GetSpectrum(i, true)));
+                }
+                (msd, vendor) = Fresh();
+                Assert.IsFalse(AnyMarked(conversion.Fallback(msd, msd.Run.SpectrumList, conversion.Wrap(msd, vendor, false))));
+
+                // A list whose spectra sit at other indices than the file's (as a demultiplexed list passes its MS1
+                // through, under their own ids) finds them in the fallback by id: here, the MS2 alone.
+                var ms1 = new CentrixCentroider(new CentrixParams { SigmaTh = 0.073 });
+                var ms2 = new CentrixCentroider(new CentrixParams { SigmaTh = 0.22 });
+                (msd, vendor) = Fresh();
+                var wrapped = conversion.Wrap(msd, vendor, false);
+                var ms2Only = SpectrumListFactory.Wrap(wrapped, "msLevel 2");
+                Assert.AreEqual(14, ms2Only.Count);
+                var byId = new CentrixSpectrumList(ms2Only, new Lazy<ISpectrumList>(() => conversion.Fallback(msd, vendor, wrapped)),
+                    ms1, ms2, CentroidMode.vendor, 2, new Software("Centrix"));
+                for (int i = 0; i < byId.Count; i++)
+                {
+                    var spectrum = byId.GetSpectrum(i, true);
+                    Assert.IsTrue(VendorCentroidedSpectra.IsMarked(spectrum), spectrum.Id);
+                    Assert.AreEqual(ms2Only.SpectrumIdentity(i).Id, spectrum.Id);
+                    Assert.AreEqual(i, spectrum.Index);
+                }
+
+                // Through Centrix's list, the fallback built only when a spectrum needs it: once, with every spectrum
+                // sent to it; never, with Centrix centroiding them all.
+                foreach (var mode in new[] { CentroidMode.vendor, CentroidMode.auto })
+                {
+                    (msd, vendor) = Fresh();
+                    var (file, reader) = (msd, vendor);
+                    var spectra = conversion.Wrap(file, reader, false);
+                    int built = 0;
+                    var lazy = new Lazy<ISpectrumList>(() =>
+                    {
+                        built++;
+                        return conversion.Fallback(file, reader, spectra);
+                    });
+                    var list = new CentrixSpectrumList(spectra, lazy, ms1, ms2, mode, 2, new Software("Centrix"));
+                    bool vendorMode = mode == CentroidMode.vendor;
+                    for (int i = 0; i < list.Count; i++)
+                        Assert.AreEqual(vendorMode, VendorCentroidedSpectra.IsMarked(list.GetSpectrum(i, true)), $"{mode}, spectrum {i}");
+                    Assert.AreEqual(vendorMode ? 1 : 0, built, mode.ToString());
+                    Assert.AreEqual(vendorMode ? list.Count : 0, list.FallbackSpectra, mode.ToString());
+                }
+            }
+            finally
+            {
+                foreach (var msd in opened)
+                    msd.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A list that centroids the way a vendor reader does, for the tests: pwiz's peak picker asks it for the vendor's
+        /// centroids, and each spectrum it centroids is marked, its profile left as it was. The marked spectra come from
+        /// a second copy of the file, so the profile the other lists read stays unmarked.
+        /// </summary>
+        private sealed class VendorCentroidedSpectra : SpectrumListWrapper, IVendorCentroidingSpectrumList
+        {
+            private const string MARK = "test vendor centroids";
+            private readonly ISpectrumList _centroidSource;
+
+            public VendorCentroidedSpectra(ISpectrumList inner, ISpectrumList centroidSource)
+                : base(inner)
+            {
+                _centroidSource = centroidSource;
+            }
+
+            public string VendorCentroidName => "test vendor peak picking";
+
+            public static bool IsMarked(Spectrum spectrum) => spectrum.Params.UserParams.Any(u => u.Name == MARK);
+
+            public Spectrum GetCentroidSpectrum(int index, bool getBinaryData, Pwiz.Util.Misc.IntegerSet msLevelsToCentroid)
+            {
+                var spectrum = _centroidSource.GetSpectrum(index, getBinaryData);
+                if (IsMarked(spectrum))
+                    return spectrum;
+                if (msLevelsToCentroid.Contains(spectrum.Params.CvParamValueOrDefault(CVID.MS_ms_level, 0)))
+                {
+                    SpectrumRouting.MarkCentroid(spectrum);
+                    spectrum.Params.UserParams.Add(new UserParam(MARK));
+                }
+                return spectrum;
+            }
         }
 
         [TestMethod]

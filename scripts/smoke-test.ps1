@@ -40,7 +40,16 @@ try {
     if ($profile -ne 0) { throw "$profile spectra of $output are still profile" }
     if ($text -notmatch 'Centrix centroiding') { throw "No Centrix processing record in $output" }
     if (-not $text.TrimEnd().EndsWith('</indexedmzML>')) { throw "$output is not a complete indexed mzML" }
-    Write-Host "Smoke test passed: $spectra spectra centroided"
+
+    # --centroid vendor writes Thermo's own centroids, under a filter too: the vendor's peak picker must wrap the
+    # reader's list, not Centrix's wrappers, or it falls back to pwiz's wavelet picker.
+    $vendorDir = Join-Path $work 'vendor'
+    & $Centrix $raw -o $vendorDir --centroid vendor --filter 'msLevel 1-'
+    if ($LASTEXITCODE -ne 0) { throw 'centrix --centroid vendor failed to convert the .raw' }
+    $vendorText = Get-Content -Raw (Join-Path $vendorDir '090701-LTQVelos-unittest-01.centrix.mzML')
+    if ($vendorText -notmatch 'Thermo/Xcalibur peak picking') { throw "--centroid vendor did not write Thermo's centroids" }
+    if (([regex]::Matches($vendorText, 'MS:1000128')).Count -ne 0) { throw '--centroid vendor left profile spectra' }
+    Write-Host "Smoke test passed: $spectra spectra centroided, and Thermo's centroids with --centroid vendor"
 }
 finally {
     Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue

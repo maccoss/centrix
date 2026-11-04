@@ -56,6 +56,7 @@ namespace Centrix.Cli
         private readonly CentrixOptions _options;
         private readonly Log _log;
         private StellarZoomLabelFix _zoomLabelFix;   // the last opened file's, when it is a Stellar's
+        private ISpectrumList _read;                 // the last opened file's spectra as its reader gives them
 
         public Conversion(CentrixOptions options, Log log)
         {
@@ -83,7 +84,8 @@ namespace Centrix.Cli
         public void Run(string input, string output)
         {
             var clock = Stopwatch.StartNew();
-            using var msd = Open(input);
+            bool vendor = _options.Centroid == CentroidMode.vendor;
+            using var msd = Open(input, vendor);
             var spectra = msd.Run.SpectrumList;
             _log.Info($"Opened {input}: {spectra.Count:N0} spectra in {clock.Elapsed.TotalSeconds:F0} s");
 
@@ -91,10 +93,12 @@ namespace Centrix.Cli
             CentrixSpectrumList centrix = null;
             StaggeredDemuxSpectrumList stepped = null;
             var software = AddSoftware(msd);
-            if (_options.Centroid == CentroidMode.vendor)
+            if (vendor)
             {
-                final = new SpectrumList_PeakPicker(spectra, WaveletPicker, true, "1-");
-                _log.Info("Centroiding: the vendor's centroids (pwiz's wavelet picker where there are none)");
+                final = spectra;
+                _log.Info(_read is IVendorCentroidingSpectrumList reader
+                    ? $"Centroiding: the vendor's centroids ({reader.VendorCentroidName})"
+                    : "Centroiding: pwiz's wavelet picker (the file carries no vendor centroids)");
             }
             else
             {
@@ -107,9 +111,10 @@ namespace Centrix.Cli
                     source = stepped;
                     _log.Info($"Demultiplexing: {stepped.Count:N0} spectra out, indexed in {clock.Elapsed.TotalSeconds:F0} s");
                 }
-                // Vendor centroids for profile spectra Centrix is not for, read through the same list; a demultiplexed
-                // or filtered list is no vendor's, and pwiz's wavelet picker serves.
-                var fallback = new SpectrumList_PeakPicker(source, WaveletPicker, true, "1-");
+                // The profile spectra Centrix is not for (a Fusion's Orbitrap MS1, demultiplexed or not): the vendor's
+                // centroids, from a second list read through the same reader, built only if one is asked for.
+                var read = _read;
+                var fallback = new Lazy<ISpectrumList>(() => Fallback(msd, read, spectra));
                 var ms1 = Centroider(plan.SigmaMs1);
                 var ms2 = Centroider(plan.SigmaMs2);
                 centrix = new CentrixSpectrumList(source, fallback, ms1, ms2, _options.Centroid, _options.EffectiveThreads, software);
@@ -166,42 +171,97 @@ namespace Centrix.Cli
 
         /// <summary>
         /// The input opened by ProteoWizard: a Thermo .raw or an open format, with no vendor peak picking, so Centrix sees
-        /// the profile. Filters wrap the spectra.
+        /// the profile, or, for <see cref="CentroidMode.vendor"/>, with the vendor's. Centrix's wrappers (<see cref="Wrap"/>)
+        /// go on top.
         /// </summary>
-        private MSData Open(string input)
+        private MSData Open(string input, bool vendorCentroids = false)
         {
             var msd = new MSData();
             Readers().Read(input, msd, new ReaderConfig());
+            _read = msd.Run.SpectrumList;
+            msd.Run.SpectrumList = Wrap(msd, vendorCentroids ? VendorPicker(_read) : _read, true);
+            return msd;
+        }
+
+        /// <summary>
+        /// The vendor's peak picking, pwiz's wavelet picker where the reader has none, over every MS level, as msconvert's
+        /// <c>peakPicking vendor msLevel=1-</c>. It must wrap the reader's own list: the picker takes the vendor's
+        /// centroids only from a list that is the reader's, so a filter beneath it would turn it into the wavelet picker.
+        /// </summary>
+        internal static ISpectrumList VendorPicker(ISpectrumList read) =>
+            new SpectrumList_PeakPicker(read, WaveletPicker, true, "1-");
+
+        /// <summary>
+        /// Centrix's wrappers over a list read from the file: the user's filters, then on a Stellar's the zoom label
+        /// removed (<see cref="StellarZoomLabelFix"/>) and the Adaptive RT spectra left out.
+        /// </summary>
+        /// <param name="msd">The file the list was read from.</param>
+        /// <param name="spectra">The list as read, or the vendor's peak picker over it.</param>
+        /// <param name="primary">The list the output is made from: it logs, and keeps the zoom-label fix's count.</param>
+        internal ISpectrumList Wrap(MSData msd, ISpectrumList spectra, bool primary)
+        {
             if (_options.Filters.Count > 0)
             {
-                msd.Run.SpectrumList = SpectrumListFactory.Wrap(msd.Run.SpectrumList, _options.Filters, msd);
-                _log.Info($"Filters: {string.Join("; ", _options.Filters)}");
+                spectra = SpectrumListFactory.Wrap(spectra, _options.Filters, msd);
+                if (primary)
+                    _log.Info($"Filters: {string.Join("; ", _options.Filters)}");
             }
             bool stellar = SpectrumRouting.IsStellar(msd);
-            _zoomLabelFix = stellar && !_options.KeepZoomLabel
-                ? new StellarZoomLabelFix(msd.Run.SpectrumList)
-                : null;
-            if (_zoomLabelFix != null)
-                msd.Run.SpectrumList = _zoomLabelFix;
+            if (primary)
+                _zoomLabelFix = null;
+            if (stellar && !_options.KeepZoomLabel)
+            {
+                var fix = new StellarZoomLabelFix(spectra);
+                if (primary)
+                    _zoomLabelFix = fix;
+                spectra = fix;
+            }
             if (stellar && _options.AdaptiveRt == AdaptiveRtMode.exclude)
-                ExcludeAdaptiveRt(msd);
-            return msd;
+                spectra = ExcludeAdaptiveRt(spectra, primary);
+            return spectra;
+        }
+
+        /// <summary>
+        /// Centroids for the profile spectra Centrix is not for, spectrum for spectrum with <paramref name="wrapped"/>: the
+        /// vendor's, through the vendor's peak picker on the reader's own list under the same wrappers; pwiz's wavelet
+        /// picker over <paramref name="wrapped"/> when the file has no vendor centroids, or when the wrappers do not give
+        /// the same spectra twice. A demultiplexed list passes such spectra through under their own ids, which
+        /// <see cref="CentrixSpectrumList"/> finds them by.
+        /// </summary>
+        /// <param name="msd">The file.</param>
+        /// <param name="read">Its spectra as its reader gives them.</param>
+        /// <param name="wrapped"><paramref name="read"/> under <see cref="Wrap"/>, before any demultiplexing.</param>
+        internal ISpectrumList Fallback(MSData msd, ISpectrumList read, ISpectrumList wrapped)
+        {
+            if (read is IVendorCentroidingSpectrumList)
+            {
+                var vendor = Wrap(msd, VendorPicker(read), false);
+                if (vendor.Count == wrapped.Count)
+                    return vendor;
+                _log.Warn($"The vendor's centroids give {vendor.Count:N0} spectra under the filters, not {wrapped.Count:N0}: " +
+                    "pwiz's wavelet picker centroids the spectra Centrix is not for");
+            }
+            return new SpectrumList_PeakPicker(wrapped, WaveletPicker, true, "1-");
         }
 
         /// <summary>
         /// A Stellar's Adaptive RT alignment spectra (<see cref="SpectrumRouting.IsWiderThan"/>) left out of the run: the
         /// instrument's own retention time alignment scans, not data for a search. Walks every spectrum's metadata once.
         /// </summary>
-        internal void ExcludeAdaptiveRt(MSData msd)
+        internal void ExcludeAdaptiveRt(MSData msd) => msd.Run.SpectrumList = ExcludeAdaptiveRt(msd.Run.SpectrumList, true);
+
+        private ISpectrumList ExcludeAdaptiveRt(ISpectrumList spectra, bool log)
         {
-            var spectra = msd.Run.SpectrumList;
             var kept = new SpectrumListFilter(spectra, new NotWiderThan(_options.AdaptiveRtWidthTh));
             int excluded = spectra.Count - kept.Count;
             if (excluded == 0)
-                return;
-            msd.Run.SpectrumList = kept;
-            _log.Info($"Adaptive RT: {excluded:N0} spectra isolated wider than {_options.AdaptiveRtWidthTh:G} Th left out " +
-                "(--adaptive-rt include keeps them)");
+                return spectra;
+            if (log)
+            {
+                _log.Info($"Adaptive RT: {excluded:N0} spectra isolated wider than {_options.AdaptiveRtWidthTh:G} Th left out " +
+                    "(--adaptive-rt include keeps them)");
+            }
+            return kept;
         }
 
         /// <summary>ProteoWizard's open formats (mzML among them) and Thermo's reader, the only vendor's.</summary>
