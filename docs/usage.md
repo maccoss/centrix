@@ -1,231 +1,154 @@
-# Centrix Usage Guide
+# Using Centrix
 
-## Installation
-
-### Prerequisites
-
-OpenBLAS system headers are required on Linux/WSL:
-
-```bash
-sudo apt install libopenblas-dev
+```
+centrix [run|calibrate] -i <input>... [-o <output>] [options]
 ```
 
-### Build
+`run` (the default, and optional) centroids each input into an mzML; `calibrate` reports the peak
+sigmas and the demultiplexing scheme each input would get, and writes nothing.
 
-```bash
-cargo build --release
+## Inputs and outputs
+
+Anything ProteoWizard reads: Thermo `.raw`, mzML (gzipped too), mzXML, mz5, mzMLb, MGF, and on Windows
+the other vendors' formats (Bruker `.d`, SCIEX `.wiff`/`.wiff2`, Waters, Agilent, Shimadzu). Inputs
+follow `-i` or stand alone; several may follow one `-i`.
+
+Each input's output is `<stem>.centrix.mzML`, beside the input or in the `-o` directory; with a
+single input, `-o file.mzML` names it. An output that exists is skipped unless `--overwrite`. Each is
+written as `<name>.partial` and renamed when complete, so an interrupted run leaves no file that
+looks finished.
+
+The mzML is indexed, its m/z and times 64-bit and its intensities 32-bit, zlib-compressed
+(`--no-zlib`: uncompressed). Every spectrum of the input is written, in order, including any left
+empty by centroiding (DIA-NN needs them all). Its software list names Centrix, and its processing
+record names the centroider's settings (sigma, grid, lambda, solver, algorithm version).
+
+A centroid's intensity is the sum of its peak's profile samples (the Gaussian's area over the point
+spacing), about 3.4 times the peak height a Stellar vendor centroid reports, so absolute
+intensities differ between the two.
+
+## What happens to each spectrum
+
+`--centroid` decides who centroids a profile spectrum:
+
+| Mode | A linear ion trap's profile | Any other analyzer's profile | Already centroided |
+|---|---|---|---|
+| `auto` (default) | Centrix | the vendor's centroids (pwiz's wavelet picker for a file with none) | as read |
+| `centrix` | Centrix | Centrix | as read |
+| `vendor` | the vendor's centroids | the vendor's centroids | as read |
+
+A spectrum is an ion trap's when its instrument configuration names an ion trap analyzer; when its
+file names none, when its points are spaced as a linear ion trap scan rate spaces them. `vendor` is
+the baseline to compare Centrix with: the same file written the same way, centroided by Thermo.
+
+## The Stellar's zoom-scan label
+
+The Stellar's firmware writes its ordinary DIA profile spectra to the `.raw` file as zoom scans (a
+bug reported to Thermo): each has "Z" in its filter string (`ITMS + p NSI Z ms2 ...`), and ProteoWizard
+reports each as a zoom scan (MS:1000497). On a run whose instrument model is a Stellar, Centrix takes
+the label off every MS2 no wider than `--adaptive-rt-width` (10 Th): the term goes, the filter string
+loses its "Z" (`ITMS + p NSI ms2 ...`), and the processing record names the correction. The log says
+how many were relabelled. `--keep-zoom-label` writes them as the file has them.
+
+The label the Stellar does mean is its Adaptive RT alignment scans': spectra for the instrument's own
+retention time alignment, not for a search, 20 or 50 m/z wide where its DIA windows are never wider
+than 10. An MS2 wider than `--adaptive-rt-width` is one, and keeps its label. By default
+(`--adaptive-rt exclude`) they are left out of the output; `--adaptive-rt include` writes them,
+centroided like the rest and passed through any demultiplexing unchanged. The log says how many were
+left out. Runs from other instruments are not touched by either.
+
+## Options
+
+| Option | Default | Meaning |
+|---|---|---|
+| `-i, --input <file>...` | | Input files |
+| `-o, --output <path>` | beside each input | Output directory, or an `.mzML` for one input |
+| `--overwrite` | | Replace existing outputs |
+| `--filter <spec>` | | A ProteoWizard spectrum filter in msconvert's syntax (repeatable), applied after reading |
+| `--no-zlib` | | Uncompressed binary arrays |
+| `--centroid auto\|centrix\|vendor` | `auto` | See above |
+| `--sigma <Th>` | from the run | The peak sigma of every MS level |
+| `--sigma-ms1 <Th>`, `--sigma-ms2 <Th>` | from the run | One level's sigma, over `--sigma` |
+| `--solver descent\|active-set` | `descent` | Rust Centrix's coordinate descent, or the exact optimum ([algorithm](algorithm.md#solvers)) |
+| `--demux auto\|off\|staggered` | `auto` | Demultiplex staggered windows ([demultiplexing](demultiplexing.md)) |
+| `--no-ions` | | Weigh the demultiplexing by intensity, not by ions from fill times |
+| `--adaptive-rt exclude\|include` | `exclude` | A Stellar's Adaptive RT alignment spectra: left out, or written (centroided, not demultiplexed) |
+| `--adaptive-rt-width <Th>` | 10 | A Stellar MS2 isolated wider than this is an Adaptive RT spectrum; on any run, MS2 this wide are never demultiplexed |
+| `--keep-zoom-label` | | Leave the zoom-scan label the Stellar puts on its DIA MS2 |
+| `-j, --threads <n>` | every core | The output does not depend on it |
+| `-q, --quiet`, `-v, --verbose` | | Errors only; more detail (the demultiplexer's batches, stack traces) |
+| `--version`, `-h, --help` | | |
+
+The lasso's settings, as Rust Centrix names them (defaults are Rust Centrix's):
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--lambda-factor` | 3 | The lasso penalty, in noise sigmas |
+| `--signal-threshold-sigma` | 3 | Signal regions: points above baseline by this many noise sigmas |
+| `--merge-gap-points` | 2 | Runs of signal this many points apart or fewer form one region |
+| `--extension-points` | 3 | Points added to each side of a region |
+| `--min-region-width` | 3 | Regions narrower than this many points are dropped |
+| `--noise-window-da`, `--noise-step-da` | 20, 5 | The windows the noise is refined in, Th |
+| `--lambda-change-threshold` | 0.2 | Regions whose penalty the refined noise moves by more than this are solved again |
+| `--max-lasso-iter`, `--lasso-tol` | 2000, 1e-6 | Coordinate descent's sweep cap and absolute tolerance |
+| `--min-centroid-separation` | the sigma | Centroids closer than this (Th) merge |
+| `--grid-spacing` | each spectrum's | The profile point spacing, Th |
+| `--grid-offset-th` | 0 | The m/z of basis position 0, Th (Rust's `--grid-offset` was a fraction of the spacing) |
+| `--min-noise-sigma` | 1 | The least noise sigma the penalty is set from |
+
+Gone with Rust Centrix's calibration: `--scan-rate` and `--n-calibration-spectra` (the sigma comes
+from the point spacing; see [the peak sigma](algorithm.md#the-peak-sigma)), and `--config`.
+
+## Calibrate
+
+`centrix calibrate <file>` writes nothing. It settles each level's peak sigma as a conversion would,
+detects the window scheme, and also measures the peak width of each level from the isolated peaks of
+up to 3,000 spectra spread across the run, beside the sigma Centrix fits:
+
+```
+Centrix MS1 peak sigma 0.073 Th (67 kTh/s scan rate, from its point spacing); MS2 0.220 Th (200 kTh/s scan rate, from its point spacing)
+MS2 windows: 251 into 251 bins, 1-fold (non-overlapping)
+  MS1: its isolated peaks measure sigma 0.176 Th (FWHM 0.41 Th, lower quartile of 141 peaks); Centrix fits 0.073 Th, 0.42 of it
+  MS2: its isolated peaks measure sigma 0.270 Th (FWHM 0.64 Th, lower quartile of 20,650 peaks); Centrix fits 0.220 Th, 0.81 of it
 ```
 
-The binary is at `target/release/centrix`.
+(a Stellar 2 Th run). The rule that sets the sigma from the point spacing was validated by searches
+at 200 kTh/s, where the ratio is 0.81; at another scan rate this is the check that the rule suits the
+data ([algorithm](algorithm.md#the-peak-sigma)).
 
-For Intel MKL (Windows/HPC):
-```bash
-cargo build --release --no-default-features --features mkl
+## The log
+
+On the 16-spectrum Stellar slice the tests use (`tests/Centrix.Tests/Data/Centrix`):
+
+```
+centrix 2.0.0, 32 threads
+Opened stellar-2th-profile-slice.mzML: 16 spectra in 0 s
+Centrix MS1 peak sigma 0.073 Th (67 kTh/s scan rate, from its point spacing); MS2 0.220 Th (200 kTh/s scan rate, from its point spacing)
+MS2 windows: 14 into 14 bins, 1-fold (non-overlapping)
+Wrote stellar-2th-profile-slice.centrix.mzML in 0 s
+  16 spectra centroided by Centrix (4,698 centroids), 0 by the vendor or pwiz, 0 centroided already
 ```
 
----
+A sigma line that says "isolated peaks measured" means the run's point spacing is no known linear
+ion trap scan rate's, and the sigma was measured from its peaks instead (an older ion trap, or a
+zoom scan); "no profile spectra for Centrix at this level" means Centrix centroids none of that
+level's spectra (a Fusion's Orbitrap MS1).
 
-## Subcommands
+Exit status: 0 when every input converted, 1 when any failed (the others are still converted), 2 for
+a command-line mistake.
 
-Centrix has four subcommands:
-
-| Command | Purpose |
-|---------|---------|
-| `run` | Full pipeline: centroid a profile mzML file |
-| `inspect` | Print summary statistics for an mzML file |
-| `calibrate` | Run calibration only and report parameters |
-| `centroid-test` | Centroid N spectra and print per-spectrum stats (no output file) |
-
----
-
-## Full Pipeline
+## Examples
 
 ```bash
-# Single file — output is input.centrix.mzML in the same directory
-centrix run -i input.mzML
+# Stellar staggered DIA: detected and demultiplexed with no options
+centrix 20261009_Stellar_4Th-SuperOverlap_TR02.raw
 
-# Multiple files via glob
-centrix run -i '*.mzML'
+# Compare with Thermo's centroids of the same run
+centrix run.raw -o vendor/ --centroid vendor
 
-# Explicit output directory
-centrix run -i '*.mzML' -o results/
+# A fixed sigma and the exact solver
+centrix run.raw --sigma-ms2 0.22 --solver active-set
+
+# A slice of a run, for a test fixture
+centrix run.raw --filter "scanTime [600,720]" --filter "mzWindow [450,750]" -o slice.mzML
 ```
-
-This runs the complete pipeline: calibration → two-pass centroiding → mzML output.
-Output files are automatically named `<stem>.centrix.mzML` and placed next to the
-input file (or in the `-o` directory if specified).
-
-### With custom parameters
-
-```bash
-centrix run -i input.mzML --lambda-factor 1.5 --signal-threshold-sigma 2.0
-```
-
-### With a YAML config file
-
-```bash
-centrix run -i input.mzML --config params.yaml
-```
-
-### Controlling thread count
-
-```bash
-# Use 8 threads
-centrix run -i input.mzML --threads 8
-
-# Use all available cores (default)
-centrix run -i input.mzML --threads 0
-```
-
-### Verbose logging
-
-```bash
-RUST_LOG=debug centrix run -i input.mzML
-```
-
-Or for info-level:
-```bash
-RUST_LOG=info centrix run -i input.mzML
-```
-
----
-
-## Inspect a File
-
-Print per-scan summary statistics for profile or centroided mzML files:
-
-```bash
-centrix inspect --input file.mzML
-```
-
-Optionally limit the number of spectra:
-```bash
-centrix inspect --input file.mzML --n 500
-```
-
-Output includes: scan number, MS level, data mode (profile/centroid), number of
-data points, m/z range, max intensity, and median spacing.
-
-This is useful for:
-- Verifying a file is profile mode before running Centrix
-- Comparing point counts between profile input and centroided output
-- Checking that the output was written correctly
-
----
-
-## Calibration Only
-
-Run the calibration step and print detected parameters without centroiding:
-
-```bash
-centrix calibrate --input file.mzML
-```
-
-Output includes:
-- Detected σ for MS1 and MS2 (FWHM and σ in Da)
-- Profile grid spacing per MS level
-- Sampling density (points per σ)
-- Gram matrix properties (neighbor correlation)
-- Matched Stellar scan rate
-
-This is useful for verifying that auto-calibration produces reasonable values
-before running the full pipeline.
-
----
-
-## Centroid Test
-
-Centroid a limited number of spectra and print per-spectrum statistics without
-writing an output file:
-
-```bash
-centrix centroid-test --input file.mzML --n 200
-```
-
-Output is a table with columns: scan number, MS level, region count,
-LASSO count, Pass 2 refit count, centroid count, and processing time.
-
-This is useful for:
-- Quick performance profiling
-- Evaluating parameter choices before committing to a full run
-- Verifying centroid counts are in a reasonable range
-
----
-
-## Typical Workflows
-
-### Compare Centrix output with Thermo centroiding
-
-```bash
-# Run Centrix on profile data
-centrix run -i data/profile.mzML
-
-# Open both in SeeMS or another viewer
-# - data/profile.mzML (profile input)
-# - data/profile.centrix.mzML (Centrix output)
-# - data/centroid.mzML (Thermo onboard centroiding, if available)
-```
-
-### Tune sensitivity
-
-```bash
-# 1. Quick test with default parameters
-centrix centroid-test --input data/profile.mzML --n 200
-
-# 2. Check centroid counts — if too few, lower lambda_factor
-centrix centroid-test --input data/profile.mzML --n 200 \
-  -- --lambda-factor 1.5
-
-# 3. Full run with tuned parameters
-centrix run -i data/profile.mzML \
-  --lambda-factor 1.5 --signal-threshold-sigma 2.0
-```
-
-### Verify calibration
-
-```bash
-# Check what Centrix detects
-centrix calibrate --input data/profile.mzML
-
-# If auto-calibration is wrong, override
-centrix run -i data/profile.mzML \
-  --sigma-ms1 0.255 --sigma-ms2 0.340
-```
-
-### Batch processing
-
-Centrix natively supports multiple input files and glob patterns:
-
-```bash
-# Process all files in a directory
-centrix run -i 'data/profile/*.mzML'
-
-# Multiple files with explicit output directory
-centrix run -i 'data/profile/*.mzML' -o data/centroided/ \
-  --lambda-factor 1.5
-
-# Multiple individual files
-centrix run -i file1.mzML file2.mzML file3.mzML
-```
-
-Output files are automatically named `<stem>.centrix.mzML`.
-
----
-
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `RUST_LOG` | Log level: `error`, `warn`, `info`, `debug`, `trace` |
-| `RAYON_NUM_THREADS` | Alternative way to set thread count (overridden by `--threads`) |
-
----
-
-## Performance Notes
-
-- The pipeline is I/O-bound on fast machines and compute-bound through WSL or slow
-  storage
-- Placing input files on native filesystem (not cross-filesystem mounts like
-  WSL's `/mnt/`) significantly improves throughput
-- Release builds (`--release`) are ~10–20× faster than debug builds
-- The progress bar shows total throughput (spectra/sec) across all threads

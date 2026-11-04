@@ -1,0 +1,151 @@
+name: CI
+
+# Every push and pull request is built and tested on Windows and Linux, and a vendor build reads a Thermo .raw on
+# both. Pushes to main and version tags also build the packages (Windows zip and installer, Linux tarball), install
+# the Linux one on a clean runner and run it, and a version tag attaches them to a GitHub release.
+#
+# The vendor builds pass -p:IAgreeToVendorLicenses=true: committing this workflow is the repository owner's agreement
+# to the vendor SDK licenses (pwiz/pwiz/data/vendor_readers/*/EULA.*.txt), as ProteoWizard's own CI agrees to them.
+# The packages leave the vendor SDKs out; they are fetched on first use (docs/building.md).
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+
+jobs:
+  build-and-test:
+    name: Build and test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Cache the pinned ProteoWizard tree
+        uses: actions/cache@v4
+        with:
+          path: pwiz
+          key: pwiz-${{ runner.os }}-${{ hashFiles('pwiz.lock', 'scripts/pwiz-sparse-paths.txt') }}
+      - name: Fetch the pinned ProteoWizard tree
+        shell: pwsh
+        run: ./scripts/get-pwiz.ps1
+      - name: Build
+        run: dotnet build Centrix.sln -c Release -p:Platform=x64
+      - name: Test
+        run: dotnet test Centrix.sln -c Release -p:Platform=x64 --no-build --logger "trx;LogFileName=results.trx"
+      - name: Keep the test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}
+          path: tests/Centrix.Tests/TestResults/*.trx
+
+  thermo-smoke:
+    name: Read a Thermo .raw (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Cache the pinned ProteoWizard tree
+        uses: actions/cache@v4
+        with:
+          path: pwiz
+          key: pwiz-${{ runner.os }}-${{ hashFiles('pwiz.lock', 'scripts/pwiz-sparse-paths.txt') }}
+      - name: Fetch the pinned ProteoWizard tree
+        shell: pwsh
+        run: ./scripts/get-pwiz.ps1
+      - name: Build with the vendor readers
+        run: dotnet build src/Centrix/Centrix.csproj -c Release -p:Platform=x64 -p:IAgreeToVendorLicenses=true
+      - name: Centroid ProteoWizard's Thermo test file
+        shell: pwsh
+        run: |
+          $exe = $IsWindows ? 'centrix.exe' : 'centrix'
+          ./scripts/smoke-test.ps1 -Centrix (Join-Path 'src/Centrix/bin/x64/Release/net10.0' $exe)
+
+  package:
+    name: Package
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    needs: [build-and-test, thermo-smoke]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ISCC.exe -ErrorAction SilentlyContinue) -and -not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+              choco install innosetup --no-progress -y
+          }
+      - name: Build the packages
+        shell: pwsh
+        run: ./package.ps1 -IAgreeToVendorLicenses -Setup
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.exe
+
+  linux-install:
+    name: Install and run the Linux package
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: dist
+      - name: Install from the tarball and run it
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -xzf dist/centrix-*-linux-x64.tar.gz -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP"/centrix-*-linux-x64/install.sh --prefix "$RUNNER_TEMP/install"
+          export PATH="$RUNNER_TEMP/install/bin:$PATH"
+          centrix --version
+          git clone --quiet --depth 1 --filter=blob:none --sparse https://github.com/ProteoWizard/pwiz.git "$RUNNER_TEMP/pwiz"
+          git -C "$RUNNER_TEMP/pwiz" sparse-checkout set pwiz/data/vendor_readers/Thermo
+          pwsh ./scripts/smoke-test.ps1 -Centrix "$(command -v centrix)" -PwizRoot "$RUNNER_TEMP/pwiz"
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [package, linux-install]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: dist
+      - name: Check the tag against the version
+        shell: bash
+        run: |
+          version="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props | head -1)"
+          [[ "${GITHUB_REF_NAME}" == "v${version}" ]] || { echo "Tag ${GITHUB_REF_NAME} does not match version ${version} in Directory.Build.props"; exit 1; }
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/* --title "Centrix ${GITHUB_REF_NAME#v}" --generate-notes

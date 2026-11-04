@@ -2,190 +2,147 @@
 
 ## Project Overview
 
-Centrix is a post-acquisition centroiding tool for Thermo Stellar linear ion trap
-profile-mode mzML data. It replaces onboard centroiding using non-negative LASSO
-regression with Gaussian basis functions.
+Centrix centroids, and demultiplexes, linear ion trap profile data (Thermo Stellar, the ion trap of a
+Fusion/Eclipse). It reads any file ProteoWizard reads (Thermo `.raw` directly) and writes centroided
+mzML through ProteoWizard's C# libraries (pwiz-sharp).
 
-**Primary goal:** Deconvolute two or more signals within 1 m/z of each other. The
-Stellar's onboard centroider places one centroid per ~1 Da interval and collapses
-overlapping signals into a single incorrect centroid. Centrix solves this using a
-sub-Da Gaussian basis grid and non-negative LASSO.
+**Primary goal:** separate two or more signals within 1 m/z of each other, which the vendor's
+one-centroid-per-maximum centroider merges, by a non-negative lasso on a Gaussian basis, one
+candidate per profile point. **Second goal:** demultiplex staggered Stellar DIA (50% overlap,
+SuperOverlap) jointly with centroiding.
 
-Target instrument: Thermo Stellar (radial ejection linear ion trap, ~0.5-0.7 Da FWHM).
-Language: Rust 2021 edition, single-crate lib/bin split (not a workspace).
-Spec: centroiding_spec.md
+Language: C# on .NET 10. The Rust implementation is history (tag `rust-final`).
 
 ## Build Commands
 
 ```bash
-# Development build (OpenBLAS default)
-cargo build
-
-# Release build
-cargo build --release
-
-# Run on a file
-cargo run --release -- input.mzML -o output.mzML
-
-# Run tests
-cargo test
-
-# Run benchmarks
-cargo bench
+./build.sh --test --i-agree-to-the-vendor-licenses        # Linux / WSL
+pwsh ./build.ps1 -RunTests -IAgreeToVendorLicenses        # Windows
+pwsh ./package.ps1 -IAgreeToVendorLicenses [-Setup]       # dist/ zip, tar.gz, Setup.exe
 ```
 
-## CI Requirements (run before every commit)
+By hand (after `scripts/get-pwiz.ps1`):
 
 ```bash
-cargo fmt
-cargo clippy --all-targets -- -D warnings
-cargo test
+dotnet build Centrix.sln -c Release -p:Platform=x64 -p:IAgreeToVendorLicenses=true
+dotnet test Centrix.sln -c Release -p:Platform=x64 -p:IAgreeToVendorLicenses=true --no-build
 ```
 
-## Module Layout
+`-p:IAgreeToVendorLicenses=true` must be a global property (command line), or the pwiz vendor
+projects compile without vendor support. Warnings are errors. Run the tests before every commit.
+
+`pwsh scripts/smoke-test.ps1 -Centrix <exe>` converts ProteoWizard's Thermo test `.raw` and checks the
+mzML (CI runs it on Windows and Linux, and against the installed Linux package).
+
+## CI and releases
+
+`.github/workflows/ci.yml`: build+test (Windows, Ubuntu, no vendor), Thermo smoke (vendor build, both
+OSes), package (main and `v*` tags: zip, tarball, Inno Setup installer), install the Linux package on a
+clean runner and smoke it, release (`v*` tag must equal `v<Version>` from `Directory.Build.props`).
+To release: bump `<Version>`, commit, tag `v<version>`, push the tag.
+
+## Layout
 
 ```
-src/
-├── main.rs         CLI entry point (clap)
-├── lib.rs          Public API, pub mod declarations
-├── config.rs       Config struct (clap + serde), defaults
-├── error.rs        CentrixError (thiserror), Result<T> alias
-├── calibration.rs  σ auto-calibration, grid spacing/offset detection
-├── noise.rs        Rough noise estimate, Pass 1→2 refinement
-├── basis.rs        GramTemplate (Toeplitz row), BasisPrecompute
-├── signal.rs       SignalRegion detection and merging
-├── centroid.rs     Two-pass orchestration: centroid_spectrum()
-├── lasso.rs        Non-negative LASSO coordinate descent solver
-└── io/
-    ├── mod.rs
-    ├── reader.rs   Profile mzML reader (mzdata crate)
-    └── writer.rs   Passthrough centroided mzML writer (quick-xml)
+src/Centrix.Core/      The centroider (CentrixCentroider, NonNegativeLasso, CentrixBasis, NoiseProfile,
+                       SignalRegion) and the peak-sigma calibration (CentrixCalibration). No dependencies.
+src/Centrix.Demux/     The staggered joint demultiplexer (StaggeredDemuxPipeline, JointDemultiplexer,
+                       JointApportioner, DemuxSchemeDetector, ...). Depends on Centrix.Core only.
+src/Centrix/           The `centrix` executable: CentrixOptions (CLI), Conversion (one file),
+                       CentrixSpectrumList (parallel read-ahead centroiding), SpectrumRouting (who
+                       centroids which spectrum), StaggeredDemuxSpectrumList + PwizDemuxSource (pwiz glue).
+tests/Centrix.Tests/   MSTest; real Stellar fixtures and goldens under Data/.
+pwiz/                  The pinned ProteoWizard tree (gitignored; scripts/get-pwiz.*, pwiz.lock).
+installer/Setup.iss    The Windows installer (Inno Setup 6).
+docs/                  usage, algorithm, demultiplexing, building; history/ holds the Rust spec.
+scripts/               Python mzML validators and notebooks (unchanged from the Rust era).
 ```
 
-## Key Architectural Decisions
+## Key Decisions
 
-### Gram Matrix Is Toeplitz
-Only the first row is stored as `gram_row: Vec<f64>`. Entry (i,j) = `gram_row[|i-j|]`.
-No O(n²) per-region allocation. The entire row fits in L1 cache (~20 entries for
-typical σ/grid-spacing ratios).
+### ProteoWizard is pinned source, not a package
+pwiz-sharp has no NuGet packages. `pwiz.lock` pins a commit; `scripts/get-pwiz.*` makes a shallow,
+blobless, sparse clone into `./pwiz` (`scripts/pwiz-sparse-paths.txt`). `PWIZ_ROOT` overrides it with
+another checkout. Bump the pin and the tests together.
 
-### BLAS Used Only for Aᵀy
-`a.t().dot(y)` (ndarray dispatches to BLAS dgemv) is the only BLAS call in the hot
-path. The coordinate descent inner loop uses gram_row scalars directly — BLAS overhead
-would exceed computation cost for the 2-5 variable active set typical in these spectra.
+### Core and Demux stay free of file formats
+They take spectra in and hand centroids back, so they can be synced with Osprey, where the same
+classes live as `Osprey.Centroid` / `Osprey.Demux` (ProteoWizard/pwiz, `pwiz_tools/Osprey`), and so
+any reader can feed them. Only `src/Centrix` knows ProteoWizard.
 
-### BLAS Must Be Single-Threaded (CRITICAL)
-OpenBLAS (and MKL) spawn their own internal thread pools by default, sized to the
-number of CPU cores. For Centrix this is catastrophic: every dgemv call on a tiny
-8×8 to 22×22 matrix triggers thread synchronization that costs orders of magnitude
-more than the actual computation. On a 10-core machine this inflated `sys` time
-from 6s to 150+ minutes (>1500× overhead).
+### Fidelity goldens
+- `CentrixTest.TestCentrixRustGolden`: the port matches Rust Centrix's centroids on 30 real Stellar
+  spectra. Never regenerate it from C#.
+- `StellarDemuxFixtureTest`: the joint solve matches Osprey's golden (Osprey's reader kept fill times
+  as float32; the test rounds them likewise). Rebless only with `CENTRIX_REBLESS_DEMUX_FIXTURE=1` and
+  a reason in the commit.
+- Raise `CentrixCentroider.ALGORITHM_VERSION` with any change that moves a centroid.
 
-**Fix:** `main.rs` calls `openblas_set_num_threads(1)` (or `mkl_set_num_threads(1)`
-for the MKL feature) via FFI at startup. Rayon handles spectrum-level parallelism;
-BLAS must not compete with its own thread pool.
+### The peak sigma follows the point spacing
+On a linear ion trap, sigma = 1.1 point spacings (0.22 Th at the Stellar's 200 kTh/s MS2), from a
+sweep searched with entrapment; elsewhere measured from isolated peaks. Not from filter strings: the
+Stellar's MS2 carry "Z" (its Adaptive RT annotation) instead of a scan-rate letter.
 
-**DO NOT REMOVE THIS.** If you see poor performance or massive `sys` time, check
-that the BLAS single-threading call is still present in `main.rs`.
+### Calibrate measures, run does not
+`centrix calibrate` samples up to 3,000 spectra and reports each level's measured sigma (isolated-peak
+FWHM lower quartile / 2.3548) beside the fitted one (`MakePlan(spectra, measure: true)`,
+`CentrixSigmaCalibrator.MeasuredSigma`). `run` stops sampling once the point spacing settles the sigma.
+The 1.1-spacing rule is validated by searches only at 200 kTh/s (ratio fitted/measured 0.81 there);
+the Stellar's 67 kTh/s MS1 is fitted at 0.42 of its measured width; no real 125 or 33 kTh/s data yet.
 
-### Two-Pass Design
-- Pass 1: rough noise → detect regions → LASSO all regions → compute residuals inline
-- Residuals are computed using the A matrix before it's dropped (avoids redundant rebuild)
-- Noise refinement: LASSO residuals + gap intensities → smooth noise model per m/z
-- Pass 2: re-run LASSO only on regions where λ changed >20%, warm-started from Pass 1 β
-- Aᵀy is cached and reused in Pass 2 (grid doesn't change between passes, only λ changes)
+### Routing (`--centroid auto`)
+Centrix for an ion trap analyzer's profile spectra; the vendor's centroids (pwiz CWT without a
+vendor) for other analyzers (a Fusion's Orbitrap MS1); centroided spectra pass through.
 
-### Single-Peak Fast Path Threshold Is Conservative
-A region up to ~2σ wide could be two overlapping signals <1 Da apart — the key use
-case. Default threshold errs toward escalating to LASSO rather than the fast path.
+### Threading
+A Thermo `.raw` serves one request at a time: all reads of the inner list happen on one read-ahead
+thread under a lock; centroiding a batch runs on every thread. The output never depends on the
+thread count. The demultiplexer reads its source synchronously on the caller's thread.
 
-### Passthrough Writer
-quick-xml streaming mode: pass all XML events byte-for-byte except spectrum binary
-arrays. `ByteCountingWriter<W>` wrapper tracks byte offsets for index regeneration.
-Regenerates `<indexList>`, `<indexListOffset>`, and SHA-1 `<fileChecksum>` at end.
+### Demultiplexed outputs are independent objects
+`StaggeredDemuxSpectrumList` reads an acquired spectrum's metadata once for all its bins, and gives
+each output its own terms, precursors and arrays (`Detached`): `ParamContainer.Set` mutates a
+`CVParam` in place, and the read-ahead holds several siblings at once.
 
-### Compile Flags
-`.cargo/config.toml` sets `-C target-cpu=native` for better auto-vectorization
-of exp() calls in the basis matrix construction.
+### Writer
+`MSDataFile.Write` lists `msd.DataProcessings`, not the spectrum list's: `Conversion` adds Centrix's
+processing record there (its own id, `Centrix_processing`). Output goes to `<name>.partial`, renamed
+when complete. Every spectrum is written, empty ones too (DIA-NN needs them).
 
-## Dependencies (match Osprey versions exactly)
-
-```toml
-mzdata = "0.63"
-quick-xml = "0.37"
-base64 = "0.22"
-flate2 = "1.0"
-sha1 = "0.10"
-ndarray = { version = "0.16", features = ["rayon", "blas"] }
-blas-src = { version = "0.10", default-features = false, features = ["openblas"] }
-openblas-src = { version = "0.10", default-features = false, features = ["system", "cblas"] }
-rayon = "1.10"
-clap = { version = "4.5", features = ["derive", "env"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_yaml = "0.9"
-thiserror = "2.0"
-anyhow = "1.0"
-log = "0.4"
-env_logger = "0.11"
-indicatif = "0.17"
-chrono = "0.4"
-sysinfo = "0.33"
-```
-
-Dev dependencies: `criterion = "0.5"`, `approx = "0.5"`, `tempfile = "3.14"`
-
-## Performance Targets
-
-- < 3 ms per spectrum (single thread)
-- > 3000 spectra/sec (16 threads)
-- < 2 GB memory (streaming + chunked I/O)
+### Vendor SDKs in packages
+Compiled in, stripped from packages by `pwiz/build/vendor-sdk-pins.json`'s prefixes, fetched on
+first use by `VendorSdkLoader` (registered in `Program.Main`). `-BundleVendorSdks` keeps them, for
+offline machines only.
 
 ## Code Style
 
-- `///` doc comments on all `pub` items; `//` inline for non-obvious logic
-- `log::info!` for pipeline steps, `log::debug!` for per-spectrum detail, `log::warn!` for recoverable issues
-- `thiserror` `CentrixError` enum + `anyhow` in `main.rs`
-- Iterators and functional style preferred
-- `cargo fmt` defaults — no manual width overrides
+Follows the Osprey code it came from: file headers with the AI-assistance line, `_camelCase` private
+fields, `///` docs on public members, comments that say why, `CultureInfo.InvariantCulture` for every
+number formatted or parsed, `Array.Sort` only where ties cannot matter (stable `OrderBy` otherwise).
 
-## Empirical Data Findings (from real LIT mzML files)
+## Empirical Data Findings
 
-Profile grid spacing is **exact and fixed by firmware per scan rate** — perfectly uniform within each scan:
+Profile grid spacing is fixed by firmware per scan rate, uniform within a scan:
 
-| Scan Rate | Spacing           | Points/Th | Points/σ   |
-|-----------|-------------------|-----------|------------|
-| 33 kTh/s  | 1/30 = 0.03333 Th | 30        | ~6.35      |
-| 67 kTh/s  | 1/15 = 0.06667 Th | 15        | ~3.75      |
-| 125 kTh/s | 1/8  = 0.125 Th   | 8         | ~2.00      |
+| Scan rate | Spacing | Centrix sigma (1.1 spacings) |
+|---|---|---|
+| 33 kTh/s | 1/30 Th | 0.037 Th |
+| 67 kTh/s (Stellar MS1) | 1/15 Th | 0.073 Th |
+| 125 kTh/s | 1/8 Th | 0.138 Th |
+| 200 kTh/s (Stellar MS2) | 1/5 Th | 0.220 Th |
 
-These spacings are consistent across Stellar and Fusion Lumos LIT instruments.
-Grid auto-detection recovers the exact spacing from the data point density.
+ProteoWizard's Thermo reader test file (an LTQ Velos run from 2009, the only `.raw` in the pwiz
+clone, used only to test `.raw` reading) samples full scans every 1/12 Th (not in the table: sigma
+measured) and data-dependent zoom scans every 0.02 Th; one sigma per MS level serves both.
 
-At 125 kTh/s, MS2 has only **2 data points per σ** — LASSO is preferred over
-a 3-point Gaussian fit at this density.
+### The Stellar's zoom-scan label and Adaptive RT
+The Stellar's firmware writes its ordinary DIA MS2 as zoom scans (filter "Z", ProteoWizard's MS:1000497),
+a bug reported to Thermo. On Stellar runs `StellarZoomLabelFix` (applied in `Conversion.Open`) removes the
+term and the filter's "Z" from MS2 no wider than `--adaptive-rt-width` (10 Th) and records it;
+`--keep-zoom-label` disables it. Wider MS2 are the Adaptive RT alignment spectra: they keep the label,
+are recognized by width (never by "Z"), and are excluded by default (`SpectrumListFilter` in
+`Conversion.ExcludeAdaptiveRt`); `--adaptive-rt include` keeps them, centroided, outside demux.
 
-Thermo centroider output for comparison:
-
-- MS1: ~1167 centroids/scan, median gap ~0.76 Th
-- MS2: ~70–80 centroids/scan, median gap ~2 Th (confirms ~1 centroid/nominal mass unit)
-
-File `GPF-001.mzML`: 69,993 spectra (693 MS1 + 69,300 MS2).
-
-Example data locations:
-
-- `example-data/thermo-profile/` — input profile mzML (Centrix input)
-- `example-data/thermo-centroid/` — Thermo onboard centroiding (baseline comparison)
-
-## BLAS Prerequisite
-
-OpenBLAS system headers required on Linux/WSL:
-
-```bash
-sudo apt install libopenblas-dev
-```
-
-For Windows/Intel HPC, build with:
-
-```bash
-cargo build --release --no-default-features --features mkl
-```
+Stellar intensities are rates (ions/s); ions = intensity x fill time (s) / 0.98 (the ion trap response).
+Thermo onboard centroids: about one per nominal mass; a Centrix centroid's intensity is its peak's
+area over the spacing, about 3.4x a vendor centroid's height.

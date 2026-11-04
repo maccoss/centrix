@@ -1,167 +1,109 @@
 # Centrix
 
-Post-acquisition centroiding for Thermo Stellar linear ion trap profile-mode DIA
-data. Centrix replaces onboard centroiding using **non-negative LASSO regression**
-with Gaussian basis functions, deconvoluting two or more overlapping signals
-within 1 m/z of each other that the Stellar's onboard centroider collapses into
-a single incorrect centroid.
+[![CI](https://github.com/maccoss/centrix/actions/workflows/ci.yml/badge.svg)](https://github.com/maccoss/centrix/actions/workflows/ci.yml)
 
-## Why Centrix?
+Centroiding, and demultiplexing, for linear ion trap profile data: the Thermo Stellar, and the ion
+trap of a Fusion or an Eclipse. Centrix reads a run straight from the instrument's `.raw` file (or
+any file ProteoWizard reads) and writes a centroided mzML that any search engine reads.
 
-The Thermo Stellar's onboard centroider places approximately one centroid per
-~1 Da interval. When two signals fall within 1 Da of each other — common in
-DIA experiments — they are collapsed into a single centroid at an incorrect m/z
-and intensity. Centrix solves this by modeling the profile signal as a sparse sum
-of Gaussians and solving for the individual peak contributions via LASSO.
+**Why.** A linear ion trap resolves only to about 1 m/z: a fragment's profile peak is 0.4 to 0.8 Th
+wide at half maximum. The vendor's centroider places one centroid per local maximum, so two
+fragments less than about 1 Th apart come out as one centroid, at an m/z that belongs to neither.
+Centrix fits each region of the profile with Gaussian peaks of the instrument's width, one candidate
+per profile point, by a non-negative lasso, and keeps the few that explain the signal. Signals
+closer than 1 Th come out separately.
 
-## How It Works
+Three Stellar HeLa runs (2 Th DIA, profile), searched by Osprey with a CarafeSharp library
+fine-tuned on the middle run, at 1% FDR ([docs/results.md](docs/results.md)):
 
-Each spectrum is processed through a two-pass algorithm:
+| | Thermo's centroids (.raw) | Centrix |
+|---|---|---|
+| Precursors | 24,132 | **36,842** (1.53x) |
+| Peptides | 21,638 | **33,017** |
+| Protein groups | 3,516 | **4,534** |
+| Fragment m/z error (SD) | 0.39 m/z | **0.17 m/z** |
 
-1. **Rough noise estimation** — IQR-based noise floor from sorted intensities
-2. **Signal region detection** — contiguous above-threshold stretches of the
-   profile data
-3. **Pass 1: LASSO centroiding** — every signal region is modeled as `y = Aβ + ε`
-   where A is a Gaussian basis matrix. Non-negative LASSO with coordinate descent
-   finds the sparse set of peak coefficients β. The Toeplitz structure of the Gram
-   matrix (uniform grid) means only one row needs to be stored, keeping the solver
-   in L1 cache.
-4. **Noise refinement** — LASSO residuals + gap intensities give a spatially-varying
-   noise model
-5. **Pass 2: Selective re-fit** — regions where the refined λ changed >20% are
-   re-solved, warm-started from Pass 1 β
-6. **Sub-grid refinement** — log-parabola interpolation of LASSO coefficients
-   recovers sub-grid m/z precision
+Both searched with Osprey's fragment calibration starting from ±1.0 m/z. At Osprey's ±0.5 m/z default
+the vendor centroids fare worse still (19,265 precursors, against 37,532 for Centrix): they scatter
+wider than the window the calibration starts from.
 
-See [docs/algorithm.md](docs/algorithm.md) for full algorithmic details.
+**Staggered DIA.** On Stellar runs acquired with overlapping windows (50% overlap, SuperOverlap),
+Centrix demultiplexes and centroids in one solve: each acquired profile is split among the narrow
+bins its window covers by the peaks fitted to every window at once, and each bin's share is
+centroided. In Osprey searches, 4 Th staggered windows demultiplexed this way recovered most of what
+2 Th windows give, at a 4 Th acquisition's cycle time ([docs/results.md](docs/results.md#earlier-searches-osprey-proteowizardpwiz4710)).
 
-## Quick Start
+## Install
 
-### Prerequisites
+Download a package from the [releases page](https://github.com/maccoss/centrix/releases); neither
+needs .NET installed.
 
-OpenBLAS headers (Linux/WSL):
-```bash
-sudo apt install libopenblas-dev
-```
+- **Windows**: run `Centrix-Setup-<version>.exe`. It installs for you alone (no administrator rights)
+  or for everyone, and can put `centrix` on the PATH. Or unzip `centrix-<version>-win-x64.zip`
+  anywhere and run `centrix.exe` from it.
+- **Linux** (x64):
 
-### Build
+  ```bash
+  tar -xzf centrix-<version>-linux-x64.tar.gz
+  centrix-<version>-linux-x64/install.sh            # into ~/.local; --prefix /opt for elsewhere
+  centrix --version                                 # ~/.local/bin must be on the PATH
+  ```
 
-```bash
-cargo build --release
-```
+  `install.sh --uninstall` removes it. The unpacked folder also runs as it is.
 
-### Run
+The vendor libraries that read `.raw` and the other vendor formats are not in the packages, since
+their licenses do not allow redistributing them. The first time Centrix reads a vendor file it
+downloads that vendor's library, pinned and hash-checked, from ProteoWizard into a per-user cache,
+as ProteoWizard's own tools do. Using them means agreeing to their licenses (`EULA.*.txt` beside
+`centrix`). A machine without internet access needs a package built with `-BundleVendorSdks`
+([docs/building.md](docs/building.md)).
 
-```bash
-# Single file — output is profile.centrix.mzML in the same directory
-centrix run -i profile.mzML
-
-# Multiple files via glob
-centrix run -i '*.mzML'
-
-# Explicit output directory
-centrix run -i '*.mzML' -o results/
-```
-
-### Tune sensitivity
-
-The default parameters are conservative (fewer, high-confidence centroids).
-To increase centroid count:
+## Use
 
 ```bash
-# Moderate increase
-centrix run -i profile.mzML --lambda-factor 1.5
+# Centroid a Stellar run, demultiplexing it if its windows overlap: writes run.centrix.mzML beside it
+centrix run.raw
 
-# More aggressive (closer to Thermo centroider count)
-centrix run -i profile.mzML \
-  --lambda-factor 1.5 --signal-threshold-sigma 2.0
+# Several files into one directory
+centrix -i *.raw -o centroided/
+
+# The peak sigmas and demultiplexing a run would get, and the peak widths it measures, writing nothing
+centrix calibrate run.raw
 ```
 
-See [docs/parameters.md](docs/parameters.md) for all parameters.
+By default (`--centroid auto`) Centrix centroids the profile spectra of an ion trap and leaves the
+rest to the vendor's centroider: on a Fusion, the ion trap's MS2 by Centrix and the Orbitrap's MS1 by
+Thermo's. Every option is in [docs/usage.md](docs/usage.md); `centrix --help` lists them.
 
-## Subcommands
+**What it decides from the data.** The peak width Centrix fits with comes from the run: on a linear
+ion trap, 1.1 profile point spacings, and the point spacing identifies the scan rate (0.22 Th at
+200 kTh/s, 0.138 Th at 125 kTh/s, 0.073 Th at 67 kTh/s). That rule was set by searches at 200 kTh/s
+only; at other rates `centrix calibrate` shows the width the run's peaks measure beside it, and
+`--sigma` overrides it ([docs/algorithm.md](docs/algorithm.md#the-peak-sigma)). Staggered windows are
+demultiplexed when they are detected. On a Stellar, the zoom-scan label its firmware puts on DIA
+spectra is removed, and its Adaptive RT alignment scans are left out ([docs/usage.md](docs/usage.md#the-stellars-zoom-scan-label)).
 
-| Command | Purpose |
-|---------|---------|
-| `run` | Full pipeline: centroid a profile mzML file |
-| `inspect` | Print summary statistics for an mzML file |
-| `calibrate` | Run calibration only and report detected σ, grid spacing |
-| `centroid-test` | Centroid N spectra, print stats (no output file) |
-
-See [docs/usage.md](docs/usage.md) for detailed usage.
-
-## Target Instrument
-
-Centrix is designed for **Thermo linear ion traps** (Stellar, Fusion Lumos, etc.).
-Profile peaks are Gaussian with FWHM 0.5–2.0 Da depending on scan rate:
-
-| Scan Rate | FWHM | σ (Da) | Grid Spacing | Pts/Th | Filter Code |
-|-----------|------|--------|-------------|--------|-------------|
-| 33 kTh/s  | 0.5  | 0.212  | 1/30 Th     | 30     | `n`         |
-| 67 kTh/s  | 0.6  | 0.255  | 1/15 Th     | 15     | `r`         |
-| 125 kTh/s | 0.8  | 0.340  | 1/8 Th      | 8      | `t`         |
-| 200 kTh/s | 2.0  | 0.849  | —           | —      | `u`         |
-
-Profile grid spacing is firmware-fixed per scan rate and auto-detected from the
-data. Filter codes appear in Stellar (NSI) filter strings; other instruments
-(e.g. Fusion Lumos with ESI) use the same scan rates but without filter codes,
-so Centrix falls back to CWT-based σ calibration.
-
-## Output
-
-Centrix produces standard **centroided mzML** that is compatible with any mzML
-reader (ProteoWizard, DIA-NN, etc.). Output files are automatically named
-`<stem>.centrix.mzML` and placed next to the input (or in the `-o` directory).
-
-The output is a passthrough copy of the input with only the spectrum binary
-arrays replaced:
-
-- Profile → centroid CV term swap
-- m/z: 64-bit float, zlib compressed
-- Intensity: 32-bit float, zlib compressed (integrated Gaussian area)
-- Index and SHA-1 checksum regenerated
-
-Centroid intensities are the **discrete sum** of each fitted Gaussian
-(β × σ × √(2π) / h, where h is the profile grid spacing), matching the
-convention used by the Thermo onboard centroider.
-
-All non-spectrum content (metadata, chromatograms, etc.) is preserved
-byte-for-byte. See [docs/io-format.md](docs/io-format.md) for format details.
-
-## Performance
-
-- Batched rayon parallelism (256 spectra per batch)
-- Toeplitz Gram matrix: O(bandwidth) per coordinate descent step, ~6–15 entries
-  in L1 cache
-- Active-set LASSO: typical active set of 2–5 variables
-- BLAS only for Aᵀy (dgemv); coordinate descent uses scalars directly
-- Streaming I/O: constant memory regardless of file size
-- **BLAS forced to single-threaded** via `openblas_set_num_threads(1)` at startup —
-  BLAS operations are on tiny matrices (8×8 to 22×22) where the internal thread-pool
-  synchronization overhead is orders of magnitude larger than the computation itself.
-  Rayon handles all parallelism at the spectrum level.
-- Compiled with `-C target-cpu=native` for auto-vectorized exp() in basis matrix
-  construction
-- Pass 2 reuses cached Aᵀy from Pass 1 (grid unchanged, only λ changes)
-- Physics-based centroid merging: centroids closer than σ are merged to prevent
-  spurious close doublets from LASSO grid splitting (configurable via
-  `--min-centroid-separation`)
-
-## Building with MKL
-
-For Intel MKL instead of OpenBLAS:
-
-```bash
-cargo build --release --no-default-features --features mkl
-```
+Centrix's command line is Rust Centrix's (`centrix run -i ... -o ...`, the same lasso options and
+`<stem>.centrix.mzML` outputs), with additions: vendor files read directly, the peak sigma from the
+run's point spacing, the exact active-set solver (`--solver active-set`), and demultiplexing.
 
 ## Documentation
 
-- [Algorithm](docs/algorithm.md) — full pipeline and mathematical details
-- [Parameters](docs/parameters.md) — all parameters with defaults and tuning guidance
-- [I/O Format](docs/io-format.md) — input requirements, output format, writer architecture
-- [Usage](docs/usage.md) — subcommands, workflows, batch processing
+- [Results](docs/results.md): searches of Centrix's output against the vendor's centroids.
+- [Usage](docs/usage.md): the command line, its options and outputs.
+- [Algorithm](docs/algorithm.md): the centroider, the peak sigma, the solvers, fidelity to Rust Centrix.
+- [Demultiplexing](docs/demultiplexing.md): the staggered joint solve, ions from fill times, Adaptive RT spectra.
+- [Building](docs/building.md): the pinned ProteoWizard tree, vendor support, tests, CI, packages and releases.
+
+## History
+
+Centrix began as a Rust program (tagged `rust-final`). It was ported to C# in ProteoWizard's Osprey
+(`Osprey.Centroid`, `Osprey.Demux`, ProteoWizard/pwiz#4710), where it was held to the Rust
+implementation's centroids on real Stellar spectra, gained the active-set solver and the peak-sigma
+rule, and was joined to the staggered demultiplexer. This repository is that C# code as a tool of its
+own, reading and writing through ProteoWizard (pwiz-sharp, .NET 10).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE). The C# sources carry Apache 2.0 headers from their ProteoWizard
+origin; ProteoWizard itself is Apache 2.0, and each vendor library has its own license.

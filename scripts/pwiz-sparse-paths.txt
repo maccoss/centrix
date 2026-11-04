@@ -1,0 +1,18 @@
+# The parts of the ProteoWizard tree Centrix builds from (git sparse-checkout, non-cone patterns).
+# The library sources, their build plumbing and the vendor SDK archives; no test projects or
+# test data, which are most of the repository.
+/Directory.Build.props
+/Directory.Build.targets
+/global.json
+/build/
+/libraries/
+/vendor-archives/
+/pwiz/utility/
+/pwiz/data/common/
+/pwiz/data/msdata/
+/pwiz/data/identdata/
+/pwiz/data/vendor_readers/
+/pwiz/analysis/
+/pwiz_tools/Shared/Lib/
+!/pwiz/**/test/
+!/pwiz/**/*.data/
