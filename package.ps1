@@ -64,9 +64,14 @@ if (-not $version) { throw 'No <Version> in Directory.Build.props' }
 # Vendor SDK files, by name prefix: ProteoWizard's own table, which its installers strip by.
 $vendorPrefixes = (Get-Content -Raw (Join-Path $pwiz 'build/vendor-sdk-pins.json') | ConvertFrom-Json).vendors |
     ForEach-Object { $_.prefixes } | Sort-Object -Unique
+# Files the vendor archives carry that are not libraries, so the prefix table misses them: Waters'
+# MassLynx license key, which its reader wants beside the program (under the Waters EULA, which
+# allows no redistribution).
+$vendorDataFiles = @('license.key')
 $satellites = 'cs', 'de', 'es', 'fr', 'it', 'ja', 'ko', 'pl', 'pt-BR', 'ru', 'tr', 'zh-Hans', 'zh-Hant'
 
 function Test-VendorFile([string]$leaf) {
+    if ($leaf -in $vendorDataFiles) { return $true }
     if ($leaf -notmatch '\.(dll|exe|manifest|so|dylib)(\.\d+)*$') { return $false }
     $base = if ($leaf.StartsWith('lib')) { $leaf.Substring(3) } else { $leaf }
     foreach ($p in $vendorPrefixes) {

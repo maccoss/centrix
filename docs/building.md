@@ -94,6 +94,11 @@ on Windows, `~/.local/share/ProteoWizard/vendor` on Linux). `-BundleVendorSdks` 
 in the package instead, for machines with no internet access; that package is for your own use, not
 for redistribution. The vendors' EULAs are in every package built with vendor support.
 
+Waters' MassLynx license key (`license.key`), which the build puts beside the program from the
+Waters archive, is left out too. ProteoWizard's Waters reader looks for it only there or in
+`MASSLYNX_LICENSE_KEY`, not in the download cache, so a package cannot read Waters `.raw` folders
+unless that variable holds the key; a build from source, or a `-BundleVendorSdks` package, can.
+
 The version is `<Version>` in `Directory.Build.props`: CalVer `YY.feature.patch`, bumped only at release
 time ([release-notes/README.md](../release-notes/README.md)).
 
@@ -115,10 +120,16 @@ repository owner's agreement to the vendor licenses.
 
 ## Releasing
 
-1. Set `<Version>` in `Directory.Build.props`, and commit.
-2. Tag the commit `v<version>` and push the tag.
-3. CI builds, tests, packages, installs the Linux package on a clean runner, and publishes the release
-   with the three packages and generated notes.
+Versions are CalVer `YY.feature.patch`, as in Skyline-PRISM; the full process is in
+[release-notes/README.md](../release-notes/README.md).
+
+1. Rename `release-notes/RELEASE_NOTES_next.md` to `RELEASE_NOTES_v<version>.md`, delete its empty
+   headings, and start a new draft.
+2. Set `<Version>` in `Directory.Build.props`, and merge both to `main`.
+3. Tag `main` `v<version>` and push the tag.
+4. CI checks the tag against `<Version>` and its notes, builds, tests, packages, installs the Linux
+   package on a clean runner, and publishes the release with the three packages, the notes file as
+   its description.
 
 ## Code conventions
 

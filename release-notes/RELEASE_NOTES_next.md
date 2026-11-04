@@ -10,3 +10,5 @@ Draft for the next release: add entries as changes land, and rename this file to
 ## Bug fixes
 
 ## Breaking changes
+
+## Known issues
