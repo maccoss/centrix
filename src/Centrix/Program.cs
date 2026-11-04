@@ -55,9 +55,18 @@ namespace Centrix.Cli
             // them beside the executable uses those.
             Pwiz.Vendor.Common.VendorSdkLoader.RegisterAssemblyResolver();
             var log = new Log(options.Quiet, options.Verbose);
+            // Wildcards expanded here, for shells that pass them on (Windows'), as Rust Centrix took '*.mzML'.
+            var unmatched = options.ExpandInputs();
+            foreach (string pattern in unmatched)
+                log.Error($"{pattern}: no files match.");
+            if (options.Inputs.Count > 1 && options.NamesOutputFile)
+            {
+                log.Error($"-o {options.Output} names one output file, but there are {options.Inputs.Count} inputs; give a directory.");
+                return 2;
+            }
             log.Info($"centrix {CentrixVersion.Current}, {options.EffectiveThreads} threads");
             var conversion = new Conversion(options, log);
-            int failed = 0;
+            int failed = unmatched.Count;
             foreach (string input in options.Inputs)
             {
                 try

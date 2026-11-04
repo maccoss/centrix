@@ -28,7 +28,9 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Pwiz.Analysis;
 using Pwiz.Analysis.PeakPicking;
 using Pwiz.Data.Common.Cv;
+using Pwiz.Data.Common.Params;
 using Pwiz.Data.MsData.Instruments;
+using Pwiz.Data.MsData.Spectra;
 
 namespace Centrix.Tests
 {
@@ -100,11 +102,18 @@ namespace Centrix.Tests
                          Array.Empty<string>(), new[] { "a", "--sigma", "-1" }, new[] { "a", "--sigma" },
                          new[] { "a", "--centroid", "cwt" }, new[] { "a", "--merge-gap-points", "2.5" }, new[] { "a", "--bogus" },
                          new[] { "a", "--solver", "lbfgs" }, new[] { "a", "--adaptive-rt", "drop" },
+                         new[] { "a", "--noise-step-da", "0" }, new[] { "a", "--noise-window-da", "-5" },
+                         new[] { "a", "--lasso-tol", "NaN" }, new[] { "a", "--max-lasso-iter", "0" },
                      })
             {
                 Assert.ThrowsException<ArgumentException>(() => CentrixOptions.Parse(bad), string.Join(" ", bad));
             }
             Assert.IsTrue(CentrixOptions.Parse(new[] { "--help" }).ShowHelp);
+            // A noise step of 0 would loop forever: refused by its option's name, and by the centroider itself.
+            var noStep = Assert.ThrowsException<ArgumentException>(() => CentrixOptions.Parse(new[] { "a", "--noise-step-da", "0" }));
+            StringAssert.Contains(noStep.Message, "--noise-step-da");
+            Assert.ThrowsException<ArgumentException>(() => new CentrixCentroider(new CentrixParams { SigmaTh = 0.2, NoiseStepTh = 0 }));
+            Assert.ThrowsException<ArgumentException>(() => new CentrixCentroider(new CentrixParams { SigmaTh = 0.2, NoiseStepTh = double.NaN }));
         }
 
         [TestMethod]
@@ -405,6 +414,22 @@ namespace Centrix.Tests
                 Assert.AreEqual(1, Program.Main(new[] { "-i", missing, input, "-o", directory, "-q" }));
                 Assert.IsTrue(File.Exists(output));
 
+                // Wildcards are expanded (a Windows shell passes them on); one that matches nothing is an error; -o
+                // naming one file is refused for several inputs.
+                string inputs = Path.Combine(directory, "in");
+                Directory.CreateDirectory(inputs);
+                File.Copy(input, Path.Combine(inputs, "a.mzML"));
+                File.Copy(input, Path.Combine(inputs, "b.mzML"));
+                string outputs = Path.Combine(directory, "out");
+                Assert.AreEqual(0, Program.Main(new[] { Path.Combine(inputs, "*.mzML"), "-o", outputs, "-q" }));
+                CollectionAssert.AreEquivalent(new[] { "a.centrix.mzML", "b.centrix.mzML" },
+                    Directory.GetFiles(outputs).Select(Path.GetFileName).ToArray());
+                Assert.AreEqual(1, Program.Main(new[] { Path.Combine(inputs, "*.raw"), "-o", outputs, "-q" }));
+                Assert.AreEqual(2, Program.Main(new[] { Path.Combine(inputs, "?.mzML"), "-o", Path.Combine(directory, "one.mzML"), "-q" }));
+                var expanded = CentrixOptions.Parse(new[] { Path.Combine(inputs, "*.mzML"), Path.Combine(inputs, "none*.d"), input });
+                CollectionAssert.AreEqual(new[] { Path.Combine(inputs, "none*.d") }, expanded.ExpandInputs());
+                CollectionAssert.AreEqual(new[] { Path.Combine(inputs, "a.mzML"), Path.Combine(inputs, "b.mzML"), input }, expanded.Inputs);
+
                 // calibrate writes nothing.
                 var before = Directory.GetFiles(directory).Length;
                 Assert.AreEqual(0, Program.Main(new[] { "calibrate", input, "-q" }));
@@ -414,6 +439,70 @@ namespace Centrix.Tests
             {
                 Directory.Delete(directory, true);
             }
+        }
+
+        [TestMethod]
+        public void TestParamGroupsAndUnits()
+        {
+            // Terms a spectrum takes from a referenceable parameter group survive what Centrix changes: the group is
+            // detached, its other terms copied (the MS level among them), the group itself, which other spectra share,
+            // untouched; a filter string in a scan's group is rewritten the same way.
+            var shared = new ParamGroup { Id = "common" };
+            shared.Set(CVID.MS_profile_spectrum);
+            shared.Set(CVID.MS_ms_level, 2);
+            shared.Set(CVID.MS_positive_scan);
+            shared.Set(CVID.MS_zoom_scan);
+            var filterGroup = new ParamGroup { Id = "filters" };
+            filterGroup.Set(CVID.MS_filter_string, "ITMS + p NSI Z ms2 411.4369@hcd20.00 [200.0000-1200.0000]");
+            filterGroup.Set(CVID.MS_preset_scan_configuration, 2);
+            var spectrum = new Spectrum { Id = "scan=1" };
+            spectrum.Params.ParamGroups.Add(shared);
+            var scan = new Scan();
+            scan.ParamGroups.Add(filterGroup);
+            spectrum.ScanList.Scans.Add(scan);
+            var precursor = new Precursor(411.4369);
+            precursor.IsolationWindow.Set(CVID.MS_isolation_window_lower_offset, 1.0, CVID.MS_m_z);
+            precursor.IsolationWindow.Set(CVID.MS_isolation_window_upper_offset, 1.0, CVID.MS_m_z);
+            spectrum.Precursors.Add(precursor);
+
+            Assert.IsTrue(StellarZoomLabelFix.Relabel(spectrum, 10));
+            Assert.IsFalse(spectrum.Params.HasCVParam(CVID.MS_zoom_scan));
+            Assert.AreEqual(2, spectrum.Params.CvParamValueOrDefault(CVID.MS_ms_level, 0));
+            Assert.IsTrue(spectrum.Params.HasCVParam(CVID.MS_positive_scan));
+            Assert.IsTrue(SpectrumRouting.IsProfile(spectrum));
+            Assert.AreEqual("ITMS + p NSI ms2 411.4369@hcd20.00 [200.0000-1200.0000]", scan.CvParamValueOrDefault(CVID.MS_filter_string, ""));
+            Assert.AreEqual(2, scan.CvParamValueOrDefault(CVID.MS_preset_scan_configuration, 0));
+            SpectrumRouting.MarkCentroid(spectrum);
+            Assert.IsFalse(SpectrumRouting.IsProfile(spectrum));
+            Assert.AreEqual(2, spectrum.Params.CvParamValueOrDefault(CVID.MS_ms_level, 0));
+            Assert.IsTrue(spectrum.Params.HasCVParam(CVID.MS_positive_scan));
+            // The shared groups are as they were.
+            Assert.IsTrue(shared.HasCVParam(CVID.MS_zoom_scan) && shared.HasCVParam(CVID.MS_profile_spectrum));
+            StringAssert.Contains(filterGroup.CvParamValueOrDefault(CVID.MS_filter_string, ""), " Z ms2 ");
+
+            // The demultiplexer's source reads times in minutes and fill times in milliseconds, whatever their units,
+            // and the ion response of the analyzer that measured the spectrum (the last one listed).
+            var configuration = new InstrumentConfiguration { Id = "IC1" };
+            configuration.ComponentList.Add(new Component(CVID.MS_orbitrap, 2));
+            configuration.ComponentList.Add(new Component(CVID.MS_radial_ejection_linear_ion_trap, 3));
+            var timed = new Spectrum { Id = "scan=2" };
+            timed.Params.Set(CVID.MS_ms_level, 2);
+            var timedScan = new Scan { InstrumentConfiguration = configuration };
+            timedScan.Set(CVID.MS_scan_start_time, 600.0, CVID.UO_second);
+            timedScan.Set(CVID.MS_ion_injection_time, 0.01, CVID.UO_second);
+            timed.ScanList.Scans.Add(timedScan);
+            timed.Precursors.Add(precursor);
+            var list = new SpectrumListSimple();
+            list.Spectra.Add(timed);
+            var info = new PwizDemuxSource(list).Describe(0);
+            Assert.AreEqual(10.0, info.Time, 1e-12);
+            Assert.AreEqual(10.0, info.InjectionTime, 1e-12);
+            Assert.AreEqual(IonResponse.Of(MassAnalyzerKind.ion_trap), info.IonResponse);
+            timedScan.Set(CVID.MS_scan_start_time, 10.0, CVID.UO_minute);
+            timedScan.Set(CVID.MS_ion_injection_time, 10.0, CVID.UO_millisecond);
+            info = new PwizDemuxSource(list).Describe(0);
+            Assert.AreEqual(10.0, info.Time, 1e-12);
+            Assert.AreEqual(10.0, info.InjectionTime, 1e-12);
         }
 
         [TestMethod]
@@ -443,6 +532,10 @@ namespace Centrix.Tests
                 using var written = TestData.Open(output);
                 var spectra = written.Run.SpectrumList;
                 Assert.AreEqual(pipeline.OutputCount, spectra.Count);
+                CVID sourceUnits;
+                using (var read = TestData.Open(input))
+                    sourceUnits = read.Run.SpectrumList.GetSpectrum(0, true).GetIntensityArray().CvParam(CVID.MS_intensity_array).Units;
+                var totals = new List<double>();
                 Assert.AreEqual(800, spectra.Count);
                 for (int o = 0; o < spectra.Count; o++)
                 {
@@ -462,7 +555,24 @@ namespace Centrix.Tests
                         Assert.AreEqual(mz[k], writtenMz[k], 1e-9);
                         Assert.AreEqual(ions[k] * perIon, writtenIntensity[k], 1e-6 * ions[k] * perIon);
                     }
+
+                    // The selected ion moves with the window, its intensity zeroed, as pwiz's demultiplex filter writes it.
+                    var ion = spectrum.Precursors[0].SelectedIons.Single();
+                    Assert.AreEqual(pipeline.BinOf(o).Center, ion.CvParamValueOrDefault(CVID.MS_selected_ion_m_z, 0.0), 1e-9);
+                    if (ion.HasCVParam(CVID.MS_peak_intensity))
+                        Assert.AreEqual(0.0, ion.CvParamValueOrDefault(CVID.MS_peak_intensity, -1.0));
+                    // TIC and base peak are the bin's own; the intensity unit the acquired spectrum's.
+                    double total = writtenIntensity.Sum();
+                    Assert.AreEqual(total, spectrum.Params.CvParamValueOrDefault(CVID.MS_total_ion_current, -1.0), 1e-6 * Math.Max(total, 1));
+                    if (writtenIntensity.Count > 0)
+                    {
+                        int basePeak = writtenIntensity.IndexOf(writtenIntensity.Max());
+                        Assert.AreEqual(writtenMz[basePeak], spectrum.Params.CvParamValueOrDefault(CVID.MS_base_peak_m_z, 0.0), 1e-6);
+                    }
+                    Assert.AreEqual(sourceUnits, spectrum.GetIntensityArray().CvParam(CVID.MS_intensity_array).Units);
+                    totals.Add(total);
                 }
+                Assert.IsTrue(totals.Distinct().Count() > totals.Count / 2, "the bins' TICs are their own, not the acquired spectrum's");
             }
             finally
             {

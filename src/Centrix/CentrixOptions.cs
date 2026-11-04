@@ -294,6 +294,18 @@ General:
                         throw new ArgumentException($"Unknown option {arg}.");
                 }
             }
+            // A lasso setting the centroider cannot run with (a noise step of 0 would never end), reported by its option.
+            try
+            {
+                options.Parameters.Validate();
+            }
+            catch (ArgumentException e)
+            {
+                string message = e.Message;
+                foreach (var (option, property) in PARAMETER_OPTIONS)
+                    message = message.Replace(property + " ", option + " ");
+                throw new ArgumentException(message, e);
+            }
             // --sigma is every level's, as in Rust Centrix; a level's own option wins, wherever it is given.
             if (!(options.SigmaMs1 > 0))
                 options.SigmaMs1 = sigmaBoth;
@@ -304,13 +316,49 @@ General:
             return options;
         }
 
+        /// <summary>Whether -o names an .mzML file rather than a directory.</summary>
+        public bool NamesOutputFile => Output != null && Output.EndsWith(".mzML", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Replaces each input whose file name holds a wildcard (* or ?) with the files and directories it matches, in
+        /// name order (a Bruker .d is a directory); returns the patterns that matched nothing. Other inputs are kept as
+        /// given. Only the last part of a path may hold one.
+        /// </summary>
+        public List<string> ExpandInputs()
+        {
+            var unmatched = new List<string>();
+            var expanded = new List<string>();
+            foreach (string input in Inputs)
+            {
+                string name = Path.GetFileName(input);
+                if (name.IndexOfAny(new[] { '*', '?' }) < 0)
+                {
+                    expanded.Add(input);
+                    continue;
+                }
+                string directory = Path.GetDirectoryName(input);
+                string searched = string.IsNullOrEmpty(directory) ? "." : directory;
+                var matches = Directory.Exists(searched)
+                    ? Directory.EnumerateFileSystemEntries(searched, name)
+                        .Select(m => string.IsNullOrEmpty(directory) ? Path.GetFileName(m) : m)
+                        .OrderBy(m => m, StringComparer.Ordinal).ToList()
+                    : new List<string>();
+                if (matches.Count == 0)
+                    unmatched.Add(input);
+                expanded.AddRange(matches);
+            }
+            Inputs.Clear();
+            Inputs.AddRange(expanded);
+            return unmatched;
+        }
+
         /// <summary>
         /// The output path for an input: the -o file for one input given a path ending in .mzML, else
         /// <c>&lt;stem&gt;.centrix.mzML</c> in the -o directory or beside the input.
         /// </summary>
         public string OutputPathFor(string input)
         {
-            if (Output != null && Inputs.Count == 1 && Output.EndsWith(".mzML", StringComparison.OrdinalIgnoreCase))
+            if (Inputs.Count == 1 && NamesOutputFile)
                 return Output;
             string directory = Output ?? Path.GetDirectoryName(Path.GetFullPath(input));
             return Path.Combine(directory, Stem(input) + ".centrix.mzML");

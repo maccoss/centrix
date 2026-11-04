@@ -102,10 +102,12 @@ begin
   Result := Pos(';' + Uppercase(Dir) + ';', ';' + Uppercase(Path) + ';') = 0;
 end;
 
+{ Removes the install directory from the PATH as a whole ';'-delimited entry, wherever it is (the first entry too),
+  never as a prefix of a longer one (C:\Centrix of C:\CentrixTools). }
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   Root: Integer;
-  Key, Path, Dir: String;
+  Key, Path, Dir, Padded: String;
   P: Integer;
 begin
   if CurUninstallStep <> usPostUninstall then
@@ -114,10 +116,12 @@ begin
   if not RegQueryStringValue(Root, Key, 'Path', Path) then
     exit;
   Dir := ExpandConstant('{app}');
-  P := Pos(';' + Uppercase(Dir), Uppercase(Path));
-  if P > 0 then
-  begin
-    Delete(Path, P, Length(Dir) + 1);
-    RegWriteExpandStringValue(Root, Key, 'Path', Path);
-  end;
+  Padded := ';' + Path + ';';
+  P := Pos(';' + Uppercase(Dir) + ';', Uppercase(Padded));
+  if P = 0 then
+    exit;
+  { Drop the entry and the ';' before it; the padding keeps one ';' between its neighbors. }
+  Delete(Padded, P, Length(Dir) + 1);
+  Path := Copy(Padded, 2, Length(Padded) - 2);
+  RegWriteExpandStringValue(Root, Key, 'Path', Path);
 end;

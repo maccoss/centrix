@@ -44,6 +44,7 @@ namespace Centrix.Cli
         // The acquired spectrum the last demultiplexed output was built on, as read (metadata only), and its index.
         private Spectrum _acquired;
         private int _acquiredIndex = -1;
+        private CVID? _intensityUnits;   // the acquired spectra's intensity unit, once read
 
         public StaggeredDemuxSpectrumList(ISpectrumList inner, ScanningDemuxOptions options, TextWriter log)
             : base(inner)
@@ -151,10 +152,23 @@ namespace Centrix.Cli
             window.Set(CVID.MS_isolation_window_target_m_z, demuxBin.Center, CVID.MS_m_z);
             window.Set(CVID.MS_isolation_window_lower_offset, demuxBin.Width / 2, CVID.MS_m_z);
             window.Set(CVID.MS_isolation_window_upper_offset, demuxBin.Width / 2, CVID.MS_m_z);
+            // The selected ion follows the window to the bin's center, and its intensity, which was the whole window's,
+            // is zeroed, as pwiz's demultiplex filter writes them.
+            foreach (var ion in spectrum.Precursors[0].SelectedIons)
+            {
+                ion.Set(CVID.MS_selected_ion_m_z, demuxBin.Center, CVID.MS_m_z);
+                if (ion.HasCVParam(CVID.MS_peak_intensity))
+                    ion.Set(CVID.MS_peak_intensity, 0.0, ion.CvParam(CVID.MS_peak_intensity).Units);
+            }
             if (_centroided)
                 SpectrumRouting.MarkCentroid(spectrum);
             if (!getBinaryData)
+            {
+                // The acquired spectrum's TIC and base peak are not this bin's, and without its peaks there is nothing to
+                // give in their place.
+                RemovePeakSummary(spectrum);
                 return spectrum;
+            }
             long t1 = JointDemuxProfile.Enabled ? Stopwatch.GetTimestamp() : 0;
             var (mz, ions) = _pipeline.Peaks(index);
             if (JointDemuxProfile.Enabled)
@@ -163,13 +177,69 @@ namespace Centrix.Cli
             double perIon = _pipeline.IntensityPerIon(index);
             for (int i = 0; i < ions.Length; i++)
                 counts[i] = ions[i] * perIon;
-            spectrum.SetMZIntensityArrays(mz, counts, CVID.MS_number_of_detector_counts);
+            var units = IntensityUnits(baseIndex);
+            spectrum.SetMZIntensityArrays(mz, counts, units);
+            SetPeakSummary(spectrum, mz, counts, units);
             return spectrum;
         }
 
         /// <summary>
+        /// The unit of the acquired spectra's intensities, which the outputs keep (they are converted back to the
+        /// acquired spectrum's scale): read once, from the first demultiplexed spectrum's acquired peaks, as the metadata
+        /// read carries no arrays. Detector counts when the file names none.
+        /// </summary>
+        private CVID IntensityUnits(int baseIndex)
+        {
+            if (_intensityUnits == null)
+            {
+                var array = Inner.GetSpectrum(baseIndex, true).GetIntensityArray();
+                var units = array?.CvParam(CVID.MS_intensity_array).Units ?? CVID.CVID_Unknown;
+                _intensityUnits = units != CVID.CVID_Unknown ? units : CVID.MS_number_of_detector_counts;
+            }
+            return _intensityUnits.Value;
+        }
+
+        /// <summary>Terms that summarize a spectrum's peaks, which an output gets from its own peaks or not at all.</summary>
+        private static readonly CVID[] PEAK_SUMMARY =
+        {
+            CVID.MS_total_ion_current, CVID.MS_base_peak_m_z, CVID.MS_base_peak_intensity,
+            CVID.MS_lowest_observed_m_z, CVID.MS_highest_observed_m_z,
+        };
+
+        private static void RemovePeakSummary(Spectrum spectrum)
+        {
+            foreach (var cvid in PEAK_SUMMARY)
+            {
+                SpectrumRouting.DetachGroupsHolding(spectrum.Params, cvid);
+                spectrum.Params.CVParams.RemoveAll(p => p.Cvid == cvid);
+            }
+        }
+
+        /// <summary>An output's TIC, base peak and observed m/z range, from its own peaks; with no peaks, a TIC of 0.</summary>
+        private static void SetPeakSummary(Spectrum spectrum, double[] mz, double[] intensity, CVID units)
+        {
+            RemovePeakSummary(spectrum);
+            var terms = spectrum.Params;
+            double total = 0;
+            int basePeak = -1;
+            for (int i = 0; i < intensity.Length; i++)
+            {
+                total += intensity[i];
+                if (basePeak < 0 || intensity[i] > intensity[basePeak])
+                    basePeak = i;
+            }
+            terms.Set(CVID.MS_total_ion_current, total, units);
+            if (basePeak < 0)
+                return;
+            terms.Set(CVID.MS_base_peak_m_z, mz[basePeak], CVID.MS_m_z);
+            terms.Set(CVID.MS_base_peak_intensity, intensity[basePeak], units);
+            terms.Set(CVID.MS_lowest_observed_m_z, mz.Min(), CVID.MS_m_z);
+            terms.Set(CVID.MS_highest_observed_m_z, mz.Max(), CVID.MS_m_z);
+        }
+
+        /// <summary>
         /// A copy of an acquired spectrum's metadata that shares nothing an output rewrites: its own terms, precursors
-        /// (with their isolation windows) and no peak arrays. What no output changes (the scan list, the selected ions,
+        /// (with their isolation windows and selected ions) and no peak arrays. What no output changes (the scan list,
         /// the activation) is shared.
         /// </summary>
         private static Spectrum Detached(Spectrum acquired)
@@ -197,7 +267,12 @@ namespace Centrix.Cli
                 };
                 CopyParams(precursor, detached);
                 CopyParams(precursor.IsolationWindow, detached.IsolationWindow);
-                detached.SelectedIons.AddRange(precursor.SelectedIons);
+                foreach (var ion in precursor.SelectedIons)
+                {
+                    var own = new SelectedIon();
+                    CopyParams(ion, own);
+                    detached.SelectedIons.Add(own);
+                }
                 copy.Precursors.Add(detached);
             }
             copy.Products.AddRange(acquired.Products);

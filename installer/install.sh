@@ -18,14 +18,23 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Absolute, so the link's target does not depend on where it was made from.
+mkdir -p "$prefix"
+prefix="$(cd "$prefix" && pwd)"
 name="$(basename "$here")"          # centrix-<version>-linux-x64
 target="$prefix/lib/${name%-linux-x64}"
 link="$prefix/bin/centrix"
 
 if [[ $uninstall == 1 ]]; then
-    [[ -L "$link" ]] && rm "$link"
+    # The link goes only if it is this version's: another version installed since keeps its command.
+    if [[ -L "$link" && "$(readlink "$link")" == "$target/centrix" ]]; then
+        rm "$link"
+        echo "Removed $link"
+    elif [[ -L "$link" ]]; then
+        echo "Left $link, which points to $(readlink "$link")"
+    fi
     rm -rf "$target"
-    echo "Removed $target and $link"
+    echo "Removed $target"
     exit 0
 fi
 

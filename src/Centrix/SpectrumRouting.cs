@@ -18,8 +18,10 @@
  * limitations under the License.
  */
 
+using System.Collections.Generic;
 using System.Linq;
 using Pwiz.Data.Common.Cv;
+using Pwiz.Data.Common.Params;
 using Pwiz.Data.MsData;
 using Pwiz.Data.MsData.Instruments;
 using Pwiz.Data.MsData.Spectra;
@@ -131,22 +133,43 @@ namespace Centrix.Cli
         public static void MarkCentroid(Spectrum spectrum)
         {
             var terms = spectrum.Params;
-            for (int i = terms.CVParams.Count - 1; i >= 0; i--)
-            {
-                if (terms.CVParams[i].Cvid == CVID.MS_profile_spectrum)
-                    terms.CVParams.RemoveAt(i);
-            }
-            foreach (var group in terms.ParamGroups.ToList())
-            {
-                if (group.CVParams.All(p => p.Cvid != CVID.MS_profile_spectrum))
-                    continue;
-                // The term comes from a shared group: copy the group's other terms onto the spectrum.
-                foreach (var p in group.CVParams.Where(p => p.Cvid != CVID.MS_profile_spectrum && !terms.HasCVParam(p.Cvid)))
-                    terms.CVParams.Add(p);
-                terms.UserParams.AddRange(group.UserParams);
-                terms.ParamGroups.Remove(group);
-            }
+            DetachGroupsHolding(terms, CVID.MS_profile_spectrum);
+            terms.CVParams.RemoveAll(p => p.Cvid == CVID.MS_profile_spectrum);
             terms.Set(CVID.MS_centroid_spectrum);
+        }
+
+        /// <summary>
+        /// Makes a term a container's own, so it can be changed or removed without touching the referenceable parameter
+        /// group that supplies it (which other spectra share): each group that holds it is removed from the container
+        /// and the group's terms are copied onto it, as new objects, except those it still has from elsewhere. The
+        /// group is removed before that check, which would otherwise find every term in the group itself.
+        /// </summary>
+        internal static void DetachGroupsHolding(ParamContainer container, CVID cvid)
+        {
+            foreach (var group in container.ParamGroups.Where(g => g != null && g.HasCVParam(cvid)).ToList())
+            {
+                container.ParamGroups.Remove(group);
+                // Checked one by one, so a term the group holds twice (itself and a group it references) comes once.
+                foreach (var p in Flatten(group))
+                {
+                    if (!container.HasCVParam(p.Cvid))
+                        container.CVParams.Add(new CVParam(p.Cvid, p.Value, p.Units));
+                }
+                foreach (var u in group.UserParams.Where(u => container.UserParams.All(own => own.Name != u.Name)))
+                    container.UserParams.Add(new UserParam(u.Name, u.Value, u.Type, u.Units));
+            }
+        }
+
+        /// <summary>A group's terms, its own first and then those of the groups it references.</summary>
+        private static IEnumerable<CVParam> Flatten(ParamContainer group)
+        {
+            foreach (var p in group.CVParams)
+                yield return p;
+            foreach (var nested in group.ParamGroups.Where(g => g != null))
+            {
+                foreach (var p in Flatten(nested))
+                    yield return p;
+            }
         }
     }
 }

@@ -18,6 +18,9 @@
  * limitations under the License.
  */
 
+using System;
+using System.Globalization;
+
 namespace Centrix
 {
     /// <summary>
@@ -122,6 +125,52 @@ namespace Centrix
         public CentrixParams Copy()
         {
             return (CentrixParams)MemberwiseClone();
+        }
+
+        /// <summary>
+        /// Throws <see cref="ArgumentException"/>, naming the setting, for a value the centroider cannot run with: the
+        /// noise windows must advance (a step of 0 never ends), counts must be counts, and nothing may be NaN or infinite.
+        /// <see cref="SigmaTh"/> is not checked here: 0 means "from the run" until the caller settles it, and
+        /// <see cref="CentrixCentroider"/> checks it.
+        /// </summary>
+        public void Validate()
+        {
+            Positive(NoiseWindowTh, nameof(NoiseWindowTh));
+            Positive(NoiseStepTh, nameof(NoiseStepTh));
+            Positive(Tolerance, nameof(Tolerance));
+            NotNegative(LambdaFactor, nameof(LambdaFactor));
+            NotNegative(LambdaChangeThreshold, nameof(LambdaChangeThreshold));
+            NotNegative(SignalThresholdSigma, nameof(SignalThresholdSigma));
+            NotNegative(MinCentroidSeparationTh, nameof(MinCentroidSeparationTh));
+            NotNegative(GridSpacingTh, nameof(GridSpacingTh));
+            NotNegative(MinNoiseSigma, nameof(MinNoiseSigma));
+            Finite(GridOffsetTh, nameof(GridOffsetTh));
+            if (MaxIterations < 1)
+                throw new ArgumentException(string.Format(CultureInfo.InvariantCulture, @"{0} must be at least 1, not {1}.", nameof(MaxIterations), MaxIterations));
+            if (MergeGapPoints < 0 || ExtensionPoints < 0)
+                throw new ArgumentException(@"MergeGapPoints and ExtensionPoints cannot be negative.");
+            if (MinRegionWidth < 1)
+                throw new ArgumentException(string.Format(CultureInfo.InvariantCulture, @"{0} must be at least 1, not {1}.", nameof(MinRegionWidth), MinRegionWidth));
+        }
+
+        private static void Positive(double value, string name)
+        {
+            Finite(value, name);
+            if (!(value > 0))
+                throw new ArgumentException(string.Format(CultureInfo.InvariantCulture, @"{0} must be positive, not {1}.", name, value));
+        }
+
+        private static void NotNegative(double value, string name)
+        {
+            Finite(value, name);
+            if (value < 0)
+                throw new ArgumentException(string.Format(CultureInfo.InvariantCulture, @"{0} cannot be negative, not {1}.", name, value));
+        }
+
+        private static void Finite(double value, string name)
+        {
+            if (double.IsNaN(value) || double.IsInfinity(value))
+                throw new ArgumentException(string.Format(CultureInfo.InvariantCulture, @"{0} must be a finite number, not {1}.", name, value));
         }
     }
 }

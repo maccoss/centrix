@@ -95,6 +95,7 @@ namespace Centrix
         {
             if (!(parameters.SigmaTh > 0) || double.IsInfinity(parameters.SigmaTh))
                 throw new ArgumentException(@"The peak sigma must be positive and finite.");
+            parameters.Validate();
             if (sigmaAt != null && !(parameters.GridSpacingTh > 0))
                 throw new ArgumentException(@"A varying peak sigma needs a fixed grid spacing.");
             _parameters = parameters.Copy();

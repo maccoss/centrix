@@ -94,32 +94,31 @@ namespace Centrix.Cli
         }
 
         /// <summary>
-        /// Removes a DIA MS2's zoom-scan term (from a shared parameter group too, whose other terms it keeps) and the "Z"
-        /// of its filter string; true when there was a label to remove.
+        /// Removes a DIA MS2's zoom-scan term and the "Z" of its filter string, from a referenceable parameter group too
+        /// (detached, its other terms kept: <see cref="SpectrumRouting.DetachGroupsHolding"/>); true when there was a
+        /// label to remove.
         /// </summary>
         internal static bool Relabel(Spectrum spectrum, double adaptiveRtWidthTh)
         {
             if (spectrum.Params.CvParamValueOrDefault(CVID.MS_ms_level, 0) < 2 || SpectrumRouting.IsWiderThan(spectrum, adaptiveRtWidthTh))
                 return false;
             var terms = spectrum.Params;
-            bool removed = terms.CVParams.RemoveAll(p => p.Cvid == CVID.MS_zoom_scan) > 0;
-            foreach (var group in terms.ParamGroups.ToList())
+            bool removed = false;
+            if (terms.HasCVParam(CVID.MS_zoom_scan))
             {
-                if (group.CVParams.All(p => p.Cvid != CVID.MS_zoom_scan))
-                    continue;
-                foreach (var p in group.CVParams.Where(p => p.Cvid != CVID.MS_zoom_scan && !terms.HasCVParam(p.Cvid)))
-                    terms.CVParams.Add(p);
-                terms.UserParams.AddRange(group.UserParams);
-                terms.ParamGroups.Remove(group);
-                removed = true;
+                SpectrumRouting.DetachGroupsHolding(terms, CVID.MS_zoom_scan);
+                removed = terms.CVParams.RemoveAll(p => p.Cvid == CVID.MS_zoom_scan) > 0;
             }
             foreach (var scan in spectrum.ScanList.Scans)
             {
-                var filter = scan.CVParams.FirstOrDefault(p => p.Cvid == CVID.MS_filter_string);
-                if (filter == null || !ZOOM_IN_FILTER.IsMatch(filter.Value))
+                // The filter string may come from a referenceable group the scan shares with others.
+                var filter = scan.CvParam(CVID.MS_filter_string);
+                if (filter.Cvid != CVID.MS_filter_string || !ZOOM_IN_FILTER.IsMatch(filter.Value))
                     continue;
+                SpectrumRouting.DetachGroupsHolding(scan, CVID.MS_filter_string);
+                int own = scan.CVParams.FindIndex(p => p.Cvid == CVID.MS_filter_string);
                 // A new term rather than the old one changed: the reader may share it with the spectrum it came from.
-                scan.CVParams[scan.CVParams.IndexOf(filter)] = new CVParam(CVID.MS_filter_string, ZOOM_IN_FILTER.Replace(filter.Value, " "));
+                scan.CVParams[own] = new CVParam(CVID.MS_filter_string, ZOOM_IN_FILTER.Replace(scan.CVParams[own].Value, " "));
                 removed = true;
             }
             return removed;
