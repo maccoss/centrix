@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Centrix.Demux</RootNamespace>
+    <AssemblyName>Centrix.Demux</AssemblyName>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Centrix.Tests" />
+  </ItemGroup>
+
+  <!-- Demultiplexing of staggered (overlapping-window) linear ion trap profile acquisitions, solved
+       jointly with Centrix centroiding. Depends only on Centrix.Core: spectra in, spectra out, no
+       file format, so any reader can feed it. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Centrix.Core\Centrix.Core.csproj" />
+  </ItemGroup>
+
+</Project>

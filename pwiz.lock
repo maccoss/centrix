@@ -1,0 +1,5 @@
+# The ProteoWizard (pwiz-sharp) commit Centrix builds against.
+# scripts/get-pwiz.ps1 and scripts/get-pwiz.sh read this file and make a shallow, sparse,
+# blobless clone of it into ./pwiz. Change the commit, rerun the script, build and test.
+repository=https://github.com/ProteoWizard/pwiz.git
+commit=c1242139bfb1a0488902d70f5eeb2b3f33892b43

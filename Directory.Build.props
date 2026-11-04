@@ -1,0 +1,49 @@
+<Project>
+
+  <!-- Where the ProteoWizard (pwiz-sharp) tree is: .\pwiz, fetched at the commit pinned in pwiz.lock
+       by scripts\get-pwiz.ps1 or scripts/get-pwiz.sh, unless PWIZ_ROOT (environment or -p:) names
+       another checkout. Only the Centrix executable and its tests reference it; Centrix.Core and
+       Centrix.Demux depend on nothing. -->
+  <PropertyGroup>
+    <PwizRepoRoot Condition="'$(PwizRepoRoot)' == '' AND '$(PWIZ_ROOT)' != ''">$([MSBuild]::EnsureTrailingSlash('$(PWIZ_ROOT)'))</PwizRepoRoot>
+    <PwizRepoRoot Condition="'$(PwizRepoRoot)' == ''">$(MSBuildThisFileDirectory)pwiz\</PwizRepoRoot>
+    <PwizToolsRoot>$(PwizRepoRoot)pwiz_tools</PwizToolsRoot>
+    <PwizVendorAssembliesPath>$(PwizRepoRoot)vendor-assemblies</PwizVendorAssembliesPath>
+    <PwizVendorArchivesPath>$(PwizRepoRoot)vendor-archives</PwizVendorArchivesPath>
+    <CentrixRepoRoot>$(MSBuildThisFileDirectory)</CentrixRepoRoot>
+  </PropertyGroup>
+
+  <!-- $(PwizTargetIsWindows), which the vendor staging targets the executable imports test. -->
+  <Import Project="$(PwizToolsRoot)\Shared\Lib\PwizTargetPlatform.props"
+          Condition="'$(PwizTargetPlatformPropsImported)' != 'true' AND Exists('$(PwizToolsRoot)\Shared\Lib\PwizTargetPlatform.props')" />
+
+  <!-- Vendor support, as pwiz-sharp builds it: the vendor SDKs are extracted and compiled in only with
+       -p:IAgreeToVendorLicenses=true, a global property so the pwiz projects see it too (build.ps1
+       -IAgreeToVendorLicenses, build.sh
+       -i-agree-to-the-vendor-licenses). Thermo's SDK is managed and runs on Windows and Linux; the
+       other vendors' SDKs wrap native Windows libraries, so they are compiled in for a Windows
+       target only. Without the agreement every reader still identifies its files, and reading one
+       says vendor support is not enabled. -->
+  <PropertyGroup>
+    <NativeVendorsAvailable Condition="'$(IAgreeToVendorLicenses)' == 'true' AND '$(PwizTargetIsWindows)' == 'true'">true</NativeVendorsAvailable>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- x64 to share pwiz-sharp's bin\x64 layout on Windows, where every vendor SDK is x64 only;
+         AnyCPU for a bare `dotnet build`, as on Linux. -->
+    <Platforms>AnyCPU;x64</Platforms>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+    <Company>University of Washington</Company>
+    <Product>Centrix</Product>
+    <Authors>MacCoss Lab, University of Washington</Authors>
+    <Copyright>Copyright (c) University of Washington 2026</Copyright>
+    <Version>2.0.0</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+</Project>

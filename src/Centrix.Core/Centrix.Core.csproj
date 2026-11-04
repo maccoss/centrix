@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Centrix</RootNamespace>
+    <AssemblyName>Centrix.Core</AssemblyName>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Centrix.Tests" />
+  </ItemGroup>
+
+  <!-- The non-negative lasso centroider for linear ion trap profile spectra and its peak-sigma
+       calibration. Deliberately depends on nothing: it takes a profile spectrum's points in and
+       hands centroids back, so the reader, the demultiplexer and any other host can share it. -->
+
+</Project>
