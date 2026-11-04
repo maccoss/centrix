@@ -3,6 +3,7 @@
 The first release of Centrix in C# on .NET 10: it reads Thermo `.raw` files (and anything else
 ProteoWizard reads) directly, writes centroided mzML through ProteoWizard, and demultiplexes staggered
 Stellar DIA as it centroids. It installs on Windows and Linux with nothing else to install.
+Centrix is now licensed under the Apache License 2.0 (the Rust releases were MIT).
 
 ## New features
 

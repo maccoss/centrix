@@ -133,7 +133,7 @@ function New-Stage([string]$rid) {
     }
     Write-Host "    $kept files kept, $skipped left out"
 
-    Copy-Item (Join-Path $root 'README.md'), (Join-Path $root 'LICENSE') $stage
+    Copy-Item (Join-Path $root 'README.md'), (Join-Path $root 'LICENSE'), (Join-Path $root 'NOTICE') $stage
     if (-not $windows) {
         # Unix line endings, whatever the checkout's: bash reads a CR as part of each line.
         $install = (Get-Content -Raw (Join-Path $root 'installer/install.sh')).Replace("`r`n", "`n")

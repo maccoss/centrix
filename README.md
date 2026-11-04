@@ -3,7 +3,7 @@
 [![CI](https://github.com/maccoss/centrix/actions/workflows/ci.yml/badge.svg)](https://github.com/maccoss/centrix/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/maccoss/centrix?display_name=tag&label=release)](https://github.com/maccoss/centrix/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/maccoss/centrix/total?label=downloads&color=success)](https://github.com/maccoss/centrix/releases)
-[![License: MIT](https://img.shields.io/github/license/maccoss/centrix?color=yellow)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/github/license/maccoss/centrix?color=blue)](LICENSE)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey.svg)](docs/building.md)
 [![ProteoWizard](https://img.shields.io/badge/reads%20with-ProteoWizard-1f6fb2.svg)](https://proteowizard.sourceforge.io/)
@@ -111,5 +111,6 @@ own, reading and writing through ProteoWizard (pwiz-sharp, .NET 10).
 
 ## License
 
-MIT, see [LICENSE](LICENSE). The C# sources carry Apache 2.0 headers from their ProteoWizard
-origin; ProteoWizard itself is Apache 2.0, and each vendor library has its own license.
+Apache License 2.0, see [LICENSE](LICENSE) and [NOTICE](NOTICE). The Rust releases before 26.1.0
+(tag `rust-final`) were MIT. ProteoWizard is Apache 2.0 as well, and each vendor library has its own
+license.

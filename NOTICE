@@ -1,0 +1,10 @@
+Centrix
+Copyright 2026 University of Washington - Seattle, WA
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+Centrix releases before 26.1.0, the Rust implementation (tag rust-final), were released under the
+MIT License.
+
+Its packages include ProteoWizard (https://proteowizard.sourceforge.io/), licensed under the Apache
+License, Version 2.0. Vendor libraries that ProteoWizard downloads on first use are covered by their
+own licenses (EULA.*.txt in the package), not by this one.
