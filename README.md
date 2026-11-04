@@ -1,6 +1,12 @@
 # Centrix
 
 [![CI](https://github.com/maccoss/centrix/actions/workflows/ci.yml/badge.svg)](https://github.com/maccoss/centrix/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/maccoss/centrix?display_name=tag&label=release)](https://github.com/maccoss/centrix/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/maccoss/centrix/total?label=downloads&color=success)](https://github.com/maccoss/centrix/releases)
+[![License: MIT](https://img.shields.io/github/license/maccoss/centrix?color=yellow)](LICENSE)
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey.svg)](docs/building.md)
+[![ProteoWizard](https://img.shields.io/badge/reads%20with-ProteoWizard-1f6fb2.svg)](https://proteowizard.sourceforge.io/)
 
 Centroiding, and demultiplexing, for linear ion trap profile data: the Thermo Stellar, and the ion
 trap of a Fusion or an Eclipse. Centrix reads a run straight from the instrument's `.raw` file (or
