@@ -29,6 +29,7 @@ using Pwiz.Analysis;
 using Pwiz.Analysis.PeakPicking;
 using Pwiz.Data.Common.Cv;
 using Pwiz.Data.Common.Params;
+using Pwiz.Data.MsData;
 using Pwiz.Data.MsData.Instruments;
 using Pwiz.Data.MsData.Spectra;
 
@@ -503,6 +504,80 @@ namespace Centrix.Tests
             info = new PwizDemuxSource(list).Describe(0);
             Assert.AreEqual(10.0, info.Time, 1e-12);
             Assert.AreEqual(10.0, info.InjectionTime, 1e-12);
+        }
+
+        [TestMethod]
+        public void TestEmptySpectraKeepTheirPlace()
+        {
+            // Rust Centrix's PR #1 (maccoss/centrix): its reader skipped empty spectra while its writer rewrote every
+            // spectrum in order, so after the first empty one each spectrum got the next one's centroids. Here every
+            // spectrum is centroided in place: the Stellar slice with empty profile spectra inserted after its first MS2
+            // and at its end comes out with every spectrum in its place, the empty ones empty, the rest Rust's centroids.
+            string input = TestData.Path("Centrix", PROFILE_SLICE);
+            var golden = CentrixTest.ReadGolden(TestData.Path("Centrix", "stellar-centrix-rust.golden.tsv"));
+            string directory = TestData.TempDirectory();
+            try
+            {
+                string withEmpty = Path.Combine(directory, "with-empty.mzML");
+                var ids = new List<string>();
+                using (var msd = TestData.Open(input))
+                {
+                    var simple = new SpectrumListSimple { Dp = msd.Run.SpectrumList.DataProcessing };
+                    for (int i = 0; i < msd.Run.SpectrumList.Count; i++)
+                    {
+                        var spectrum = msd.Run.SpectrumList.GetSpectrum(i, true);
+                        simple.Spectra.Add(spectrum);
+                        if (simple.Spectra.Count == 3)
+                            simple.Spectra.Add(EmptyProfile(spectrum, "controllerType=0 controllerNumber=1 scan=900001"));
+                    }
+                    simple.Spectra.Add(EmptyProfile(simple.Spectra[^1], "controllerType=0 controllerNumber=1 scan=900002"));
+                    for (int i = 0; i < simple.Spectra.Count; i++)
+                        simple.Spectra[i].Index = i;
+                    ids.AddRange(simple.Spectra.Select(sp => sp.Id));
+                    msd.Run.SpectrumList = simple;
+                    msd.Run.ChromatogramList = null;
+                    MSDataFile.Write(msd, withEmpty);
+                }
+
+                Assert.AreEqual(0, Program.Main(new[] { withEmpty, "-o", directory, "-q", "--sigma-ms1", "0.2", "--sigma", "0.33" }));
+                using var written = TestData.Open(Path.Combine(directory, "with-empty.centrix.mzML"));
+                var spectra = written.Run.SpectrumList;
+                Assert.AreEqual(ids.Count, spectra.Count, "every spectrum written, the empty ones too");
+                var ordinal = new Dictionary<int, int>();
+                for (int i = 0; i < spectra.Count; i++)
+                {
+                    var spectrum = spectra.GetSpectrum(i, true);
+                    Assert.AreEqual(ids[i], spectrum.Id, "spectrum " + i + " in its place");
+                    var mz = spectrum.GetMZArray()?.Data ?? new List<double>();
+                    if (spectrum.Id.EndsWith("scan=900001") || spectrum.Id.EndsWith("scan=900002"))
+                    {
+                        Assert.AreEqual(0, mz.Count, spectrum.Id + " stays empty");
+                        continue;
+                    }
+                    int level = spectrum.Params.CvParamValueOrDefault(CVID.MS_ms_level, 0);
+                    ordinal.TryGetValue(level, out int n);
+                    ordinal[level] = n + 1;
+                    var expected = golden[(PROFILE_SLICE, level, n)];
+                    Assert.AreEqual(expected.Count, mz.Count, spectrum.Id + " has its own centroids");
+                    for (int k = 0; k < mz.Count; k++)
+                        Assert.AreEqual(expected[k].Mz, mz[k], 1e-3, spectrum.Id);
+                }
+            }
+            finally
+            {
+                Directory.Delete(directory, true);
+            }
+        }
+
+        /// <summary>A profile MS2 with no points, its metadata (precursor, scan) another spectrum's, under its own id.</summary>
+        private static Spectrum EmptyProfile(Spectrum like, string id)
+        {
+            var empty = new Spectrum { Id = id, ScanList = like.ScanList, DataProcessing = like.DataProcessing };
+            empty.Params.Set(CVID.MS_ms_level, like.Params.CvParamValueOrDefault(CVID.MS_ms_level, 2));
+            empty.Params.Set(CVID.MS_profile_spectrum);
+            empty.Precursors.AddRange(like.Precursors);
+            empty.SetMZIntensityArrays(Array.Empty<double>(), Array.Empty<double>(), CVID.MS_number_of_detector_counts);
+            return empty;
         }
 
         [TestMethod]
