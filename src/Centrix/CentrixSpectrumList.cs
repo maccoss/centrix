@@ -51,7 +51,8 @@ namespace Centrix.Cli
         /// <summary>Batches read ahead of the one the writer is taking spectra from.</summary>
         private const int BATCHES_AHEAD = 2;
 
-        private readonly ISpectrumList _fallback;
+        private readonly Lazy<ISpectrumList> _fallback;
+        private Dictionary<string, int> _fallbackById;   // made when the fallback's indices are not the inner list's
         private readonly CentrixCentroider[] _centroiders;
         private readonly CentroidMode _mode;
         private readonly int _threads;
@@ -71,8 +72,11 @@ namespace Centrix.Cli
 
         /// <param name="inner">The profile spectra, as read (no vendor peak picking).</param>
         /// <param name="fallback">
-        /// The same spectra centroided another way, for the profile spectra Centrix is not for; null leaves them as read.
-        /// It must read through <paramref name="inner"/>, since all reading is serialized here.
+        /// The same spectra centroided another way, for the profile spectra Centrix is not for: index for index with
+        /// <paramref name="inner"/>, or holding them under the same ids (as a list <paramref name="inner"/> demultiplexes
+        /// does); made the first time a spectrum needs it (the vendor's centroids are a second list over the
+        /// reader, not worth building for a run Centrix centroids all of). Null, or a null list, leaves them as read. It is
+        /// read under the same lock as <paramref name="inner"/>, since a Thermo .raw serves one request at a time.
         /// </param>
         /// <param name="ms1">The MS1 centroider.</param>
         /// <param name="ms2">The centroider of MS2 and above.</param>
@@ -80,8 +84,8 @@ namespace Centrix.Cli
         /// <param name="threads">Threads centroiding a batch.</param>
         /// <param name="software">The software the processing method names (Centrix's).</param>
         /// <param name="batchSize">Spectra read and centroided together.</param>
-        public CentrixSpectrumList(ISpectrumList inner, ISpectrumList fallback, CentrixCentroider ms1, CentrixCentroider ms2,
-            CentroidMode mode, int threads, Software software, int batchSize = DEFAULT_BATCH_SIZE)
+        public CentrixSpectrumList(ISpectrumList inner, Lazy<ISpectrumList> fallback, CentrixCentroider ms1,
+            CentrixCentroider ms2, CentroidMode mode, int threads, Software software, int batchSize = DEFAULT_BATCH_SIZE)
             : base(inner)
         {
             _fallback = fallback;
@@ -202,10 +206,38 @@ namespace Centrix.Cli
             {
                 var spectrum = Inner.GetSpectrum(index, true);
                 var route = SpectrumRouting.Route(spectrum, _mode);
-                if (route == SpectrumRoute.Fallback && _fallback != null)
-                    return new ReadSpectrum(_fallback.GetSpectrum(index, true), SpectrumRoute.PassThrough, true);
-                return new ReadSpectrum(spectrum, route, false);
+                var fallback = route == SpectrumRoute.Fallback ? _fallback?.Value : null;
+                if (fallback == null)
+                    return new ReadSpectrum(spectrum, route, false);
+                var centroided = fallback.GetSpectrum(FallbackIndex(fallback, index, spectrum.Id), true);
+                if (centroided.Id != spectrum.Id)
+                {
+                    throw new InvalidOperationException($"The fallback centroids spectrum {index} as '{centroided.Id}', " +
+                        $"not '{spectrum.Id}'");
+                }
+                centroided.Index = index;
+                return new ReadSpectrum(centroided, SpectrumRoute.PassThrough, true);
             }
+        }
+
+        /// <summary>
+        /// Where a spectrum is in the fallback: at its own index, or, when the spectra Centrix reads are not the
+        /// fallback's index for index (a demultiplexed list passes its MS1 through at new indices, under their ids), by
+        /// its id. Called under the read lock.
+        /// </summary>
+        private int FallbackIndex(ISpectrumList fallback, int index, string id)
+        {
+            if (_fallbackById == null && index < fallback.Count && fallback.SpectrumIdentity(index).Id == id)
+                return index;
+            if (_fallbackById == null)
+            {
+                _fallbackById = new Dictionary<string, int>(fallback.Count, StringComparer.Ordinal);
+                for (int i = 0; i < fallback.Count; i++)
+                    _fallbackById.TryAdd(fallback.SpectrumIdentity(i).Id, i);
+            }
+            if (!_fallbackById.TryGetValue(id, out int found))
+                throw new InvalidOperationException($"The fallback has no spectrum '{id}'");
+            return found;
         }
 
         private Spectrum Process(ReadSpectrum read)
