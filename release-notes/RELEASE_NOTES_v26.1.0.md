@@ -1,15 +1,15 @@
 # Centrix v26.1.0
 
-The first release of Centrix in C# on .NET 10: it reads Thermo `.raw` files (and anything else
-ProteoWizard reads) directly, writes centroided mzML through ProteoWizard, and demultiplexes staggered
+The first release of Centrix in C# on .NET 10: it reads Thermo `.raw` files directly (and mzML),
+writes centroided mzML through ProteoWizard, and demultiplexes staggered
 Stellar DIA as it centroids. It installs on Windows and Linux with nothing else to install.
 Centrix is now licensed under the Apache License 2.0 (the Rust releases were MIT).
 
 ## New features
 
-- **Reads Thermo `.raw` files directly**, and every other format ProteoWizard reads, through
-  ProteoWizard's C# libraries; there is no need to convert to profile mzML first. The vendor libraries
-  are downloaded on first use.
+- **Reads Thermo `.raw` files directly**, through ProteoWizard's C# libraries; there is no need to
+  convert to profile mzML first. Thermo's library is downloaded on first use. mzML (and ProteoWizard's
+  other open formats) read as before; other vendors' formats are not read.
 - **Packages for Windows and Linux** that carry their own .NET runtime: a Windows installer
   (`Centrix-Setup-26.1.0.exe`, per-user or for everyone, optionally on the PATH), a Windows zip, and a
   Linux tarball with `install.sh`.
@@ -39,10 +39,3 @@ Centrix is now licensed under the Apache License 2.0 (the Rust releases were MIT
   spectra (`TestCentrixRustGolden`). The default sigma now comes from the profile point spacing (above).
   In a search of three Stellar HeLa runs with Osprey, Centrix's mzML gave 36,842 precursors at 1% FDR
   against 24,132 from the vendor's centroids (docs/results.md).
-
-## Known issues
-
-- The packages cannot read Waters `.raw` folders: the MassLynx license key that ProteoWizard's Waters
-  reader needs is left out of them, as Waters' license allows no redistribution, and the reader does
-  not look for it in the vendor download cache. Set `MASSLYNX_LICENSE_KEY` to the key, or build
-  Centrix from source. Thermo `.raw` and the other formats are not affected.

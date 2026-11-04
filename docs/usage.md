@@ -9,10 +9,9 @@ sigmas and the demultiplexing scheme each input would get, and writes nothing.
 
 ## Inputs and outputs
 
-Anything ProteoWizard reads: Thermo `.raw`, mzML (gzipped too), mzXML, mz5, mzMLb, MGF, and on Windows
-the other vendors' formats (Bruker `.d`, SCIEX `.wiff`/`.wiff2`, Waters, Agilent, Shimadzu; Waters
-from a package only with its license key in `MASSLYNX_LICENSE_KEY`, [building](building.md#packages)). Inputs
-follow `-i` or stand alone; several may follow one `-i`.
+Thermo `.raw` and mzML (gzipped too), and ProteoWizard's other open formats (mzXML, mz5, mzMLb, MGF).
+Other vendors' formats are not read: convert them to profile mzML with msconvert first. Inputs follow
+`-i` or stand alone; several may follow one `-i`.
 
 Each input's output is `<stem>.centrix.mzML`, beside the input or in the `-o` directory; with a
 single input, `-o file.mzML` names it. An output that exists is skipped unless `--overwrite`. Each is

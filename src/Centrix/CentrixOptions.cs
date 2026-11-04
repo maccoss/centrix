@@ -90,7 +90,7 @@ namespace Centrix.Cli
 
 Centroids linear ion trap profile spectra (Thermo Stellar, the ion trap of a Fusion or an Eclipse) by a non-negative
 lasso on Gaussian peaks, which separates signals less than 1 m/z apart; demultiplexes staggered (overlapping-window)
-Stellar DIA in the same solve. Reads any file ProteoWizard reads (.raw, .mzML, .mzXML, .mz5, ...) and writes mzML.
+Stellar DIA in the same solve. Reads Thermo .raw and mzML (and ProteoWizard's other open formats) and writes mzML.
 
 Input and output:
   -i, --input <file>...        Input files (also accepted without -i). Several may follow one -i.
@@ -321,7 +321,7 @@ General:
 
         /// <summary>
         /// Replaces each input whose file name holds a wildcard (* or ?) with the files and directories it matches, in
-        /// name order (a Bruker .d is a directory); returns the patterns that matched nothing. Other inputs are kept as
+        /// name order (a pattern may match directories); returns the patterns that matched nothing. Other inputs are kept as
         /// given. Only the last part of a path may hold one.
         /// </summary>
         public List<string> ExpandInputs()

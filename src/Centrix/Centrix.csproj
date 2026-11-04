@@ -4,14 +4,9 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>Centrix.Cli</RootNamespace>
     <AssemblyName>centrix</AssemblyName>
-    <Description>Centroids (and demultiplexes) linear ion trap profile data with Centrix; reads any file ProteoWizard reads and writes mzML.</Description>
+    <Description>Centroids (and demultiplexes) linear ion trap profile data with Centrix; reads Thermo .raw and mzML and writes mzML.</Description>
     <!-- The Thermo SDK constructs CultureInfo("en-US") itself. -->
     <InvariantGlobalization>false</InvariantGlobalization>
-    <!-- The .wiff2 SDK and the Shimadzu SDK deserialize with BinaryFormatter, as msconvert-sharp allows. -->
-    <EnableUnsafeBinaryFormatterSerialization>true</EnableUnsafeBinaryFormatterSerialization>
-    <!-- Agilent.csproj stages its SDK both as content and in its build output, so a publish meets the same
-         files twice (vendor-assemblies/Agilent and Agilent/bin); they are the same files. -->
-    <ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
     <ServerGarbageCollection>true</ServerGarbageCollection>
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
   </PropertyGroup>
@@ -30,36 +25,12 @@
     <ProjectReference Include="$(PwizRepoRoot)pwiz\data\vendor_readers\Common\Vendor.Common.csproj" />
   </ItemGroup>
 
-  <!-- The vendor readers msconvert-sharp reads with, but Mobilion's and UIMF's (ion mobility
-       instruments Centrix has no use for; Mobilion's needs a C++ toolchain to build). Each always
-       builds, so its files are identified; without the vendor-license agreement reading one fails
-       with "vendor support not enabled". -->
+  <!-- Thermo's is the one vendor reader: Centrix reads Thermo .raw and ProteoWizard's open formats.
+       It always builds, so a .raw is identified; without the vendor-license agreement reading one
+       fails with "vendor support not enabled". (A vendor build also builds Waters' reader, which
+       ProteoWizard's lock-mass filter in Analysis needs; Centrix does not register it.) -->
   <ItemGroup>
     <ProjectReference Include="$(PwizRepoRoot)pwiz\data\vendor_readers\Thermo\Thermo.csproj" />
-    <ProjectReference Include="$(PwizRepoRoot)pwiz\data\vendor_readers\Bruker\Bruker.csproj" />
-    <ProjectReference Include="$(PwizRepoRoot)pwiz\data\vendor_readers\Waters\Waters.csproj" />
-    <ProjectReference Include="$(PwizRepoRoot)pwiz\data\vendor_readers\Agilent\Agilent.csproj" />
-    <ProjectReference Include="$(PwizRepoRoot)pwiz\data\vendor_readers\Sciex\Sciex.csproj" />
-    <ProjectReference Include="$(PwizRepoRoot)pwiz\data\vendor_readers\Shimadzu\Shimadzu.csproj" />
-    <ProjectReference Include="$(PwizRepoRoot)pwiz\data\vendor_readers\UNIFI\UNIFI.csproj" />
-    <!-- The .wiff2 reader is a runtime-only plugin, loaded into its own load context: built, not
-         referenced, and copied beside the executable (SciexWiff2Staging.targets below). -->
-    <ProjectReference Include="$(PwizRepoRoot)pwiz\data\vendor_readers\Sciex\Wiff2\Sciex.Wiff2.csproj">
-      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
-      <OutputItemType>Content</OutputItemType>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </ProjectReference>
-    <ProjectReference Include="$(PwizRepoRoot)pwiz\data\vendor_readers\Sciex\OfxLoggingStub\OfxLoggingStub.csproj"
-                      Condition="'$(NativeVendorsAvailable)' == 'true'">
-      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
-      <OutputItemType>Content</OutputItemType>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </ProjectReference>
   </ItemGroup>
-
-  <!-- The VC++ runtime the native vendor SDKs need, and the .wiff2 plugin folder, staged as
-       msconvert-sharp stages them. -->
-  <Import Project="$(PwizToolsRoot)\Shared\Lib\VendorNativeCrt.targets" />
-  <Import Project="$(PwizToolsRoot)\Shared\Lib\SciexWiff2Staging.targets" />
 
 </Project>

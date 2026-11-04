@@ -3,7 +3,7 @@
 ## Project Overview
 
 Centrix centroids, and demultiplexes, linear ion trap profile data (Thermo Stellar, the ion trap of a
-Fusion/Eclipse). It reads any file ProteoWizard reads (Thermo `.raw` directly) and writes centroided
+Fusion/Eclipse). It reads Thermo `.raw` directly and mzML (ProteoWizard's open formats) and writes centroided
 mzML through ProteoWizard's C# libraries (pwiz-sharp).
 
 **Primary goal:** separate two or more signals within 1 m/z of each other, which the vendor's
