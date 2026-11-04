@@ -129,9 +129,9 @@ Adaptive RT:
                                output. include: write them, centroided, outside any demultiplexing.
       --adaptive-rt-width <Th> A Stellar MS2 isolated wider than this is an Adaptive RT spectrum (10: they are
                                20 or 50 m/z wide, and Stellar DIA windows never exceed 10).
-      --keep-zoom-label        Keep the zoom scan term ProteoWizard gives a Stellar's 200 kTh/s spectra. By default
-                               it is removed: their filter strings' ""Z"" is the Stellar's code for that scan rate,
-                               not a zoom scan. The filter strings are written as recorded either way.
+      --keep-zoom-label        Keep the zoom-scan label a Stellar's 200 kTh/s spectra carry (the term and the ""Z""
+                               in the filter string). By default both are removed: the Stellar performs no zoom
+                               scans, and stores that scan rate in the zoom flag.
 
 General:
   -j, --threads <n>            Threads (0, the default: every core). The output does not depend on it.
@@ -155,7 +155,7 @@ General:
         public bool Ions { get; set; } = true;
         public AdaptiveRtMode AdaptiveRt { get; set; } = AdaptiveRtMode.exclude;
 
-        /// <summary>Keep the zoom scan term ProteoWizard reads from a Stellar's 200 kTh/s code (<see cref="StellarZoomLabelFix"/>).</summary>
+        /// <summary>Keep the zoom-scan label on a Stellar's 200 kTh/s spectra, term and "Z" (<see cref="StellarZoomLabelFix"/>).</summary>
         public bool KeepZoomLabel { get; set; }
 
         /// <summary>

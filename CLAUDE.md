@@ -81,7 +81,7 @@ any reader can feed them. Only `src/Centrix` knows ProteoWizard.
 ### The peak sigma follows the point spacing
 On a linear ion trap, sigma = 1.1 point spacings (0.22 Th at the Stellar's 200 kTh/s MS2), from a
 sweep searched with entrapment; elsewhere measured from isolated peaks. Not from filter strings: the
-Stellar's MS2 carry "Z" (its 200 kTh/s code, which elsewhere means a zoom scan).
+Stellar's MS2 carry "Z", the zoom flag, instead of a scan-rate letter.
 
 ### Calibrate measures, run does not
 `centrix calibrate` samples up to 3,000 spectra and reports each level's measured sigma (isolated-peak
@@ -136,10 +136,10 @@ clone, used only to test `.raw` reading) samples full scans every 1/12 Th (not i
 measured) and data-dependent zoom scans every 0.02 Th; one sigma per MS level serves both.
 
 ### The Stellar's zoom-scan label and Adaptive RT
-"Z" in a Stellar filter string is its code for 200 kTh/s (confirmed by Thermo), on DIA and Adaptive RT
-MS2 alike; ProteoWizard reads it as a zoom scan (MS:1000497). On Stellar runs `StellarZoomLabelFix`
-(applied in `Conversion.Open`) removes that term from every spectrum and records it; the filter strings
-stay as recorded, "Z" included. `--keep-zoom-label` disables it. MS2 wider than `--adaptive-rt-width`
+The Stellar cannot perform zoom scans; its `.raw` files store its 200 kTh/s rate in the zoom flag (the
+format has only so many scan options), so DIA and Adaptive RT MS2 alike carry "Z" and ProteoWizard's
+MS:1000497. On Stellar runs `StellarZoomLabelFix` (applied in `Conversion.Open`) removes both, term and
+the filter's "Z", from every spectrum and records it; `--keep-zoom-label` disables it. MS2 wider than `--adaptive-rt-width`
 (10 Th) are the Adaptive RT alignment spectra: recognized by width (never by "Z"), excluded by default
 (`SpectrumListFilter` in `Conversion.ExcludeAdaptiveRt`); `--adaptive-rt include` keeps them, centroided, outside demux.
 

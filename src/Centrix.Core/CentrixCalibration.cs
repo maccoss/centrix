@@ -31,9 +31,9 @@ namespace Centrix
     /// peak; docs/algorithm.md). Centrix gives no spacing for 200 kTh/s; the 0.2 Th here (five points
     /// per Th, on the 1000 / rate pattern of the others) is what the Stellar's MS2 at that rate has.
     /// <para>The rate is identified from the spacing rather than from the filter string's scan rate code (Centrix's
-    /// first choice: n, r, t, u after "NSI"). The Stellar's MS1 carry "r" (67 kTh/s) and its 200 kTh/s scans "Z"
-    /// (Thermo's code for that rate on the Stellar, DIA and Adaptive RT alike, though elsewhere "Z" means a zoom
-    /// scan); other LITs (a Fusion's) write no code at all. The spacing is in every profile spectrum.</para>
+    /// first choice: n, r, t, u after "NSI"). The Stellar's MS1 carry "r" (67 kTh/s), but its 200 kTh/s scans carry the
+    /// zoom flag "Z" instead (the Stellar performs no zoom scans; its .raw files store that rate there), and other LITs
+    /// (a Fusion's) write no code at all. The spacing is in every profile spectrum.</para>
     /// </summary>
     public sealed class LinearIonTrapScanRate
     {

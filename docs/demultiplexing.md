@@ -89,8 +89,8 @@ alone.
 ## Adaptive RT spectra
 
 The Stellar stores its Adaptive RT alignment spectra among its DIA spectra, both scanned at
-200 kTh/s and so both marked "Z" in the filter string (the Stellar's code for that rate,
-[usage](usage.md#the-stellars-zoom-scan-label)), so the filter identifies nothing. Adaptive RT spectra are 20 or 50 m/z wide and Stellar DIA windows never exceed 10 m/z, so
+200 kTh/s and so both labelled zoom scans, the flag its `.raw` files store that rate in (Centrix takes
+the label off, [usage](usage.md#the-stellars-zoom-scan-label)), so the label identifies nothing. Adaptive RT spectra are 20 or 50 m/z wide and Stellar DIA windows never exceed 10 m/z, so
 on a Stellar run MS2 spectra wider than `--adaptive-rt-width` (10 Th) are taken for them and, by
 default, left out of the output before anything else happens ([usage](usage.md#the-stellars-zoom-scan-label)).
 With `--adaptive-rt include` they are kept out of the scheme instead and passed through, centroided

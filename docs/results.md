@@ -7,7 +7,7 @@ Three HeLa runs (`20261009_Stellar_WWopt_2Th_400-900mz_24min_profile_TR01`-`TR03
 with otherwise identical settings:
 - **Vendor**: the `.raw` files read by Osprey directly, so with Thermo's centroids.
 - **Centrix**: the same runs converted by `centrix` 2.0.0 with its defaults (MS1 sigma 0.073 Th, MS2
-  0.22 Th, both from the point spacing; the zoom scan term ProteoWizard reads from the Stellar's "Z" removed).
+  0.22 Th, both from the point spacing; the Stellar's zoom-scan label removed).
 
 Osprey 26.1.1.307 (ProteoWizard master 4ec653c0d4), unit resolution. Each arm predicted its library
 from the human FASTA (`uniprot_human_march2026_yeastENO1_contam_ADpeps.fasta`, 20,668 proteins, about

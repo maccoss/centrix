@@ -43,18 +43,18 @@ the baseline to compare Centrix with: the same file written the same way, centro
 
 ## The Stellar's zoom-scan label
 
-The Stellar marks every spectrum it scans at 200 kTh/s with "Z" in its filter string
-(`ITMS + p NSI Z ms2 ...`): its DIA MS2 and its Adaptive RT alignment spectra alike. Thermo has
-confirmed that "Z" is the Stellar's code for that scan rate, as "r" is for 67 kTh/s
-(`ITMS + p NSI r Full ms ...`). ProteoWizard reads a Thermo filter's "Z" as a zoom scan and reports one
-(MS:1000497), but the Stellar has no zoom scans. On a run whose instrument model is a Stellar, Centrix
-removes that term from every spectrum that has it and names the correction in the processing record;
-the filter strings are written as Thermo recorded them, "Z" included. The log says how many spectra
-were relabelled. `--keep-zoom-label` keeps the term.
+The Stellar cannot perform a zoom scan, but its `.raw` files mark every spectrum it scans at
+200 kTh/s, its fastest rate, as one: the format has room for only so many scan options, and Thermo
+stored that rate in the zoom flag. Its DIA MS2 and its Adaptive RT alignment spectra alike have "Z" in
+their filter strings (`ITMS + p NSI Z ms2 ...`), and ProteoWizard reports each as a zoom scan
+(MS:1000497). On a run whose instrument model is a Stellar, Centrix takes the label off every
+spectrum: the term goes, the filter string loses its "Z" (`ITMS + p NSI ms2 ...`), and the processing
+record names the correction. The log says how many were relabelled. `--keep-zoom-label` writes them
+as the file has them.
 
 The Adaptive RT alignment scans are spectra for the instrument's own retention time alignment, not
-for a search, 20 or 50 m/z wide where its DIA windows are never wider than 10. Since both carry "Z",
-they are told apart by width: an MS2 wider than `--adaptive-rt-width` is one. By default
+for a search, 20 or 50 m/z wide where its DIA windows are never wider than 10. Since both were
+labelled alike, they are told apart by width: an MS2 wider than `--adaptive-rt-width` is one. By default
 (`--adaptive-rt exclude`) they are left out of the output; `--adaptive-rt include` writes them,
 centroided like the rest and passed through any demultiplexing unchanged. The log says how many were
 left out. Runs from other instruments are not touched by either.
@@ -76,7 +76,7 @@ left out. Runs from other instruments are not touched by either.
 | `--no-ions` | | Weigh the demultiplexing by intensity, not by ions from fill times |
 | `--adaptive-rt exclude\|include` | `exclude` | A Stellar's Adaptive RT alignment spectra: left out, or written (centroided, not demultiplexed) |
 | `--adaptive-rt-width <Th>` | 10 | A Stellar MS2 isolated wider than this is an Adaptive RT spectrum; on any run, MS2 this wide are never demultiplexed |
-| `--keep-zoom-label` | | Keep the zoom scan term ProteoWizard reads from the Stellar's 200 kTh/s "Z" |
+| `--keep-zoom-label` | | Keep the zoom-scan label (term and "Z") on the Stellar's 200 kTh/s spectra |
 | `-j, --threads <n>` | every core | The output does not depend on it |
 | `-q, --quiet`, `-v, --verbose` | | Errors only; more detail (the demultiplexer's batches, stack traces) |
 | `--version`, `-h, --help` | | |

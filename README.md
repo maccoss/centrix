@@ -80,8 +80,8 @@ ion trap, 1.1 profile point spacings, and the point spacing identifies the scan 
 200 kTh/s, 0.138 Th at 125 kTh/s, 0.073 Th at 67 kTh/s). That rule was set by searches at 200 kTh/s
 only; at other rates `centrix calibrate` shows the width the run's peaks measure beside it, and
 `--sigma` overrides it ([docs/algorithm.md](docs/algorithm.md#the-peak-sigma)). Staggered windows are
-demultiplexed when they are detected. On a Stellar, the zoom scan term ProteoWizard reads from its
-200 kTh/s code "Z" is removed, and its Adaptive RT alignment scans are left out ([docs/usage.md](docs/usage.md#the-stellars-zoom-scan-label)).
+demultiplexed when they are detected. On a Stellar, which performs no zoom scans, the zoom-scan label
+its `.raw` files put on 200 kTh/s spectra is removed, and its Adaptive RT alignment scans are left out ([docs/usage.md](docs/usage.md#the-stellars-zoom-scan-label)).
 
 Centrix's command line is Rust Centrix's (`centrix run -i ... -o ...`, the same lasso options and
 `<stem>.centrix.mzML` outputs), with additions: vendor files read directly, the peak sigma from the

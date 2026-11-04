@@ -131,8 +131,8 @@ namespace Centrix.Cli
             _log.Info($"Wrote {output} in {clock.Elapsed.TotalSeconds:F0} s");
             if (_zoomLabelFix != null && _zoomLabelFix.Relabelled > 0)
             {
-                _log.Info($"  zoom scan term removed from {_zoomLabelFix.Relabelled:N0} Stellar spectra: their filter strings' Z " +
-                    "is the 200 kTh/s scan-rate code (--keep-zoom-label keeps the term)");
+                _log.Info($"  zoom scan label removed from {_zoomLabelFix.Relabelled:N0} Stellar spectra: the Stellar stores " +
+                    "its 200 kTh/s rate as the zoom flag (--keep-zoom-label keeps it)");
             }
             if (centrix != null)
             {
