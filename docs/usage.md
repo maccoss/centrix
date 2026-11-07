@@ -108,27 +108,29 @@ detects the window scheme, and also measures the peak width of each level from t
 up to 3,000 spectra spread across the run, beside the sigma Centrix fits:
 
 ```
-Centrix MS1 peak sigma 0.073 Th (67 kTh/s scan rate, from its point spacing); MS2 0.220 Th (200 kTh/s scan rate, from its point spacing)
+Centrix MS1 peak sigma 0.073 Th (67 kTh/s scan rate, from its point spacing); MS2 0.600 Th (200 kTh/s scan rate, from its point spacing)
 MS2 windows: 251 into 251 bins, 1-fold (non-overlapping)
   MS1: its isolated peaks measure sigma 0.176 Th (FWHM 0.41 Th, lower quartile of 141 peaks); Centrix fits 0.073 Th, 0.42 of it
-  MS2: its isolated peaks measure sigma 0.270 Th (FWHM 0.64 Th, lower quartile of 20,650 peaks); Centrix fits 0.220 Th, 0.81 of it
+  MS2: its isolated peaks measure sigma 0.270 Th (FWHM 0.64 Th, lower quartile of 20,650 peaks); Centrix fits 0.600 Th, 2.22 of it
 ```
 
-(a Stellar 2 Th run). The rule that sets the sigma from the point spacing was validated by searches
-at 200 kTh/s, where the ratio is 0.81; at another scan rate this is the check that the rule suits the
-data ([algorithm](algorithm.md#the-peak-sigma)).
+(a Stellar 2 Th run). The rules that set the sigma from the point spacing were validated at one
+rate each, MS2's by searches at 200 kTh/s (ratio 2.22), MS1's by isotope measurement at 67 kTh/s
+(ratio 0.42); at another scan rate this is the check that the rules suit the data
+([algorithm](algorithm.md#the-peak-sigma)).
 
 ## The log
 
 On the 16-spectrum Stellar slice the tests use (`tests/Centrix.Tests/Data/Centrix`):
 
 ```
-centrix 26.1.0, 32 threads
+centrix 26.1.1, 16 threads
 Opened stellar-2th-profile-slice.mzML: 16 spectra in 0 s
-Centrix MS1 peak sigma 0.073 Th (67 kTh/s scan rate, from its point spacing); MS2 0.220 Th (200 kTh/s scan rate, from its point spacing)
+Centrix MS1 peak sigma 0.073 Th (67 kTh/s scan rate, from its point spacing); MS2 0.600 Th (200 kTh/s scan rate, from its point spacing)
 MS2 windows: 14 into 14 bins, 1-fold (non-overlapping)
-Wrote stellar-2th-profile-slice.centrix.mzML in 0 s
-  16 spectra centroided by Centrix (4,698 centroids), 0 by the vendor or pwiz, 0 centroided already
+Wrote stellar-2th-profile-slice.centrix.mzML in 1 s
+  zoom scan label removed from 14 Stellar spectra: the Stellar stores its 200 kTh/s rate as the zoom flag (--keep-zoom-label keeps it)
+  16 spectra centroided by Centrix (2,719 centroids), 0 by the vendor or pwiz, 0 centroided already
 ```
 
 A sigma line that says "isolated peaks measured" means the run's point spacing is no known linear
@@ -148,8 +150,8 @@ centrix 20261009_Stellar_4Th-SuperOverlap_TR02.raw
 # Compare with Thermo's centroids of the same run
 centrix run.raw -o vendor/ --centroid vendor
 
-# A fixed sigma and the exact solver
-centrix run.raw --sigma-ms2 0.22 --solver active-set
+# Fragment m/z measured rather than peptides detected (M+1 isotopes kept apart), with the exact solver
+centrix run.raw --sigma-ms2 0.38 --solver active-set
 
 # A slice of a run, for a test fixture
 centrix run.raw --filter "scanTime [600,720]" --filter "mzWindow [450,750]" -o slice.mzML

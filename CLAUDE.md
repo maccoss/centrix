@@ -86,16 +86,20 @@ any reader can feed them. Only `src/Centrix` knows ProteoWizard.
 - Raise `CentrixCentroider.ALGORITHM_VERSION` with any change that moves a centroid.
 
 ### The peak sigma follows the point spacing
-On a linear ion trap, sigma = 1.1 point spacings (0.22 Th at the Stellar's 200 kTh/s MS2), from a
-sweep searched with entrapment; elsewhere measured from isolated peaks. Not from filter strings: the
+On a linear ion trap, MS2 sigma = 3 point spacings (0.6 Th at the Stellar's 200 kTh/s), the sigma
+that detects the most peptides in searches at matched entrapment FDP; MS1 sigma = 1.1 point spacings
+(0.073 Th at 67 kTh/s), the sigma that measures precursor isotopes best (MS1's sigma does not change
+identifications). About 1.9 spacings (0.38 Th) measures fragment m/z best: detection and measurement
+want different sigmas (docs/algorithm.md). Elsewhere measured from isolated peaks. Not from filter strings: the
 Stellar's MS2 carry "Z", the zoom flag, instead of a scan-rate letter.
 
 ### Calibrate measures, run does not
 `centrix calibrate` samples up to 3,000 spectra and reports each level's measured sigma (isolated-peak
 FWHM lower quartile / 2.3548) beside the fitted one (`MakePlan(spectra, measure: true)`,
 `CentrixSigmaCalibrator.MeasuredSigma`). `run` stops sampling once the point spacing settles the sigma.
-The 1.1-spacing rule is validated by searches only at 200 kTh/s (ratio fitted/measured 0.81 there);
-the Stellar's 67 kTh/s MS1 is fitted at 0.42 of its measured width; no real 125 or 33 kTh/s data yet.
+The MS2 rule is validated by searches only at 200 kTh/s (ratio fitted/measured 2.2 there), the MS1
+rule by isotope measurement only at 67 kTh/s (fitted at 0.42 of its measured width); no real 125 or
+33 kTh/s data yet.
 
 ### Routing (`--centroid auto`)
 Centrix for an ion trap analyzer's profile spectra; the vendor's centroids (pwiz CWT without a
@@ -131,12 +135,12 @@ number formatted or parsed, `Array.Sort` only where ties cannot matter (stable `
 
 Profile grid spacing is fixed by firmware per scan rate, uniform within a scan:
 
-| Scan rate | Spacing | Centrix sigma (1.1 spacings) |
-|---|---|---|
-| 33 kTh/s | 1/30 Th | 0.037 Th |
-| 67 kTh/s (Stellar MS1) | 1/15 Th | 0.073 Th |
-| 125 kTh/s | 1/8 Th | 0.138 Th |
-| 200 kTh/s (Stellar MS2) | 1/5 Th | 0.220 Th |
+| Scan rate | Spacing | MS1 sigma (1.1 spacings) | MS2 sigma (3 spacings) |
+|---|---|---|---|
+| 33 kTh/s | 1/30 Th | 0.037 Th | 0.100 Th |
+| 67 kTh/s (Stellar MS1) | 1/15 Th | 0.073 Th | 0.200 Th |
+| 125 kTh/s | 1/8 Th | 0.138 Th | 0.375 Th |
+| 200 kTh/s (Stellar MS2) | 1/5 Th | 0.220 Th | 0.600 Th |
 
 ProteoWizard's Thermo reader test file (an LTQ Velos run from 2009, the only `.raw` in the pwiz
 clone, used only to test `.raw` reading) samples full scans every 1/12 Th (not in the table: sigma

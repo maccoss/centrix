@@ -24,5 +24,6 @@ Centrix always centroids what it writes, so a new profile fixture is cut with ms
 picking.
 
 The golden was written by Osprey's `DemuxFixtureTest.TestDemuxStellarFixture` (ProteoWizard/pwiz#4710, commit
-eab28e8141), whose reader kept each fill time as a 32-bit float; the test rounds them the same way. It is rewritten
-only by `CENTRIX_REBLESS_DEMUX_FIXTURE=1`, which fails the test so the diff is reviewed.
+057028daba, at the default MS2 sigma of three point spacings), whose reader kept each fill time as a 32-bit
+float; the test rounds them the same way. It is rewritten only by `CENTRIX_REBLESS_DEMUX_FIXTURE=1`, which fails
+the test so the diff is reviewed.

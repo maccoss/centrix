@@ -495,7 +495,7 @@ namespace Centrix.Tests
         {
             // A run at 125 kTh/s whose file names no instrument (an mzML stripped of it): its profile spectra are a
             // linear ion trap's by their 1/8 Th point spacing, Centrix centroids them, and the sigma follows the spacing,
-            // 1.1 spacings, whatever the peaks' width. The calibrate command also measures that width, for comparing.
+            // three spacings, whatever the peaks' width. The calibrate command also measures that width, for comparing.
             var random = new Random(17);
             const double spacing = 0.125, peakSigma = 0.21;
             var spectra = new Pwiz.Data.MsData.Spectra.SpectrumListSimple();
@@ -514,7 +514,7 @@ namespace Centrix.Tests
             Assert.IsTrue(SpectrumRouting.IsLinearIonTrap(spectra.GetSpectrum(0, true)));
             var conversion = new Conversion(CentrixOptions.Parse(new[] { "x", "--demux", "off" }), new Log(true, false));
             var plan = conversion.MakePlan(spectra);
-            Assert.AreEqual(CentrixCalibration.SIGMA_PER_SPACING * spacing, plan.SigmaMs2, 1e-12);
+            Assert.AreEqual(CentrixCalibration.MS2_SIGMA_PER_SPACING * spacing, plan.SigmaMs2, 1e-12);
             StringAssert.Contains(plan.SigmaMs2Source, "125 kTh/s");
 
             var measured = conversion.MakePlan(spectra, true);
@@ -729,7 +729,7 @@ namespace Centrix.Tests
             var plan = TestData.Plan(input, CentrixOptions.Parse(new[] { input }));
             Assert.IsTrue(plan.Demultiplex, plan.DemuxReason);
             Assert.AreEqual(4, plan.Scheme.OverlapFactor);
-            Assert.AreEqual(CentrixCalibration.SIGMA_PER_SPACING * 0.2, plan.SigmaMs2, 1e-12);
+            Assert.AreEqual(CentrixCalibration.MS2_SIGMA_PER_SPACING * 0.2, plan.SigmaMs2, 1e-12);
             Assert.IsFalse(TestData.Plan(input, CentrixOptions.Parse(new[] { input, "--demux", "off" })).Demultiplex);
 
             var source = new PwizDemuxSource(TestData.Open(input).Run.SpectrumList);
