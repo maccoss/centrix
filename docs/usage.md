@@ -124,7 +124,7 @@ rate each, MS2's by searches at 200 kTh/s (ratio 2.22), MS1's by isotope measure
 On the 16-spectrum Stellar slice the tests use (`tests/Centrix.Tests/Data/Centrix`):
 
 ```
-centrix 26.1.1, 16 threads
+centrix 26.2.0, 16 threads
 Opened stellar-2th-profile-slice.mzML: 16 spectra in 0 s
 Centrix MS1 peak sigma 0.073 Th (67 kTh/s scan rate, from its point spacing); MS2 0.600 Th (200 kTh/s scan rate, from its point spacing)
 MS2 windows: 14 into 14 bins, 1-fold (non-overlapping)
