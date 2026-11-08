@@ -90,8 +90,8 @@ any reader can feed them. Only `src/Centrix` knows ProteoWizard.
 ### The peak sigma follows the point spacing
 On a linear ion trap, MS2 sigma = 3 point spacings (0.6 Th at the Stellar's 200 kTh/s), the sigma
 that detects the most peptides in searches at matched entrapment FDP; MS1 sigma = 1.1 point spacings
-(0.073 Th at 67 kTh/s), the sigma that measures precursor isotopes best (MS1's sigma does not change
-identifications). About 1.9 spacings (0.38 Th) measures fragment m/z best: detection and measurement
+(0.073 Th at 67 kTh/s), the sigma of those tried that measures precursor isotopes best (MS1's sigma does not change
+identifications; narrower ones were not tried). About 1.9 spacings (0.38 Th) measures fragment m/z best: detection and measurement
 want different sigmas (docs/algorithm.md). Elsewhere measured from isolated peaks. Not from filter strings: the
 Stellar's MS2 carry "Z", the zoom flag, instead of a scan-rate letter.
 

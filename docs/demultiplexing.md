@@ -123,9 +123,21 @@ SuperOverlap's, and is twice as wide.
 | 3 | 0.507 | 0.950 / 0.961 / 0.706 | 0.959 / 0.967 / 0.798 |
 | 4 | 0.389 | 0.917 / 0.934 / 0.603 | 0.930 / 0.942 / 0.684 |
 
-At the old 1.1-spacing sigma (0.22 Th) the joint solve scores 0.985 at k=2 and 0.939 at k=4
-(median), against 0.982 and 0.930 at 0.33 Th; the benchmark has not been run at 0.6 Th. Writing the fitted peaks instead of splitting the measurements
-scores 0.944 at k=2: the fit carries the errors of the interpolated windows, and Centrix centroids
+By sigma, the joint split + Centrix on the same slice rebuilt, each sigma scored against truth
+centroided at that sigma, and in parentheses the share of the no-demultiplexing gap to a perfect
+cosine that the solve closes:
+
+| k | 0.22 Th | 0.38 Th | 0.6 Th |
+|---|---|---|---|
+| 2 | 0.985 / 0.988 / 0.941 (94%) | 0.982 / 0.985 / 0.923 (94%) | 0.950 / 0.964 / 0.789 (86%) |
+| 4 | 0.938 / 0.949 / 0.721 (89%) | 0.926 / 0.939 / 0.671 (88%) | 0.839 / 0.873 / 0.498 (76%) |
+
+The default, 0.6 Th, splits less accurately than narrower sigmas, while the searches still favor it
+(SuperOverlap 38,046 / 41,355 precursors against 36,837 / 40,333 at 0.38 Th, at entrapment FDP
+0.5% / 1%): detection tolerates a coarser split as it tolerates merged isotopes. To measure
+demultiplexed fragments, 0.38 Th (`--sigma-ms2 0.38`) is better on both counts.
+
+Writing the fitted peaks instead of splitting the measurements scores 0.944 at k=2: the fit carries the errors of the interpolated windows, and Centrix centroids
 the split measurements more stably.
 
 **Determinism.** Blocks are independent and each writes only the output it owns; the source is read

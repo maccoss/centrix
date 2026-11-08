@@ -108,9 +108,10 @@ Centroiding:
       --sigma <Th>             The peak sigma of every MS level. Default: from the run. On a linear ion trap,
                                MS2 at three profile point spacings (0.6 Th at the Stellar's 200 kTh/s), the
                                sigma that detects the most peptides, and MS1 at 1.1 (0.073 Th at its
-                               67 kTh/s), the sigma that measures precursor isotopes best; measured from the
-                               run's isolated peaks elsewhere. About two spacings (--sigma-ms2 0.38 on a
-                               Stellar) measures fragment m/z best, resolving M+1 isotopes.
+                               67 kTh/s), which measures precursor isotopes best of the sigmas tried;
+                               measured from the run's isolated peaks elsewhere. About two spacings
+                               (--sigma-ms2 0.38 on a Stellar) measures fragment m/z best, resolving M+1
+                               isotopes.
       --sigma-ms1, --sigma-ms2 <Th>
                                One level's peak sigma, over --sigma.
       --solver <solver>        descent (default): Rust Centrix's coordinate descent. active-set: the exact optimum

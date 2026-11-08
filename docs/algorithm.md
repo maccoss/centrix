@@ -56,7 +56,8 @@ the output does not depend on the thread count or the batch size
 **On a linear ion trap the MS2 sigma is three point spacings and the MS1 sigma 1.1**
 (`CentrixCalibration.MS2_SIGMA_PER_SPACING`, `MS1_SIGMA_PER_SPACING`): MS2 is searched, so it takes
 the sigma that detects the most peptides; MS1 is measured, so it takes the one that measures
-precursors best ([MS1: measuring precursors](#ms1-measuring-precursors)). The firmware fixes the profile point spacing per scan rate, so the spacing identifies the rate
+precursors best of the sigmas tried ([MS1: measuring precursors](#ms1-measuring-precursors)). The
+firmware fixes the profile point spacing per scan rate, so the spacing identifies the rate
 (`LinearIonTrapScanRate.FromSpacing`), and a level's first profile spectrum of 100 points or more
 settles its sigma.
 
@@ -121,8 +122,10 @@ run with 1:1 natural Arabidopsis entrapment, and fragment tolerance 0.5 Th.
 The vendor's centroids of the 2 Th profile runs (RawFileReader `Scan.ToCentroid`) give 43,252 /
 46,601, and separate injections acquired in centroid mode 46,412 / 50,088. Identifications rise from
 1.1 spacings to a broad plateau from 3 to 4.25 spacings, the same in all three acquisitions; 0.6 Th
-is within about 1% of the best in each, at both FDPs. Past 3 spacings the centroids move further toward
-the isotopes (MS2 offset -0.39 Th at 0.6, -0.24 at 0.85) and gain nothing.
+is within about 1% of the best in each, at both FDPs. Past 3 spacings the centroids move further
+toward the isotopes and gain nothing: the MS2 offset, observed minus predicted m/z (Osprey's
+calibration subtracts it), rises from -0.65 Th at 0.22 to -0.39 at 0.6 and -0.24 at 0.85, so the
+centroids sit higher, nearer the M+1.
 
 The fine-tuned library does not cause the preference for a wide sigma. Tuned on vendor centroids,
 which merge isotopes, it predicts more intensity on doubly charged fragments than the pretrained
@@ -180,8 +183,8 @@ stronger peaks), 0.33 Th (peaks of 30 or more ions). None of them is either opti
 **Other scan rates are untested.** MS2's rule rests on 200 kTh/s alone, MS1's on 67 kTh/s. What
 is known of the others:
 - *67 kTh/s* (the Stellar's MS1, the only real data at another rate): MS1's rule gives 0.073 Th,
-  which measures precursor isotopes best ([below](#ms1-measuring-precursors)), where the peaks
-  measure 0.176 Th (`centrix calibrate` on TR02, 141 isolated peaks). On real spectra that splits
+  which measures precursor isotopes best of the sigmas tried ([below](#ms1-measuring-precursors)),
+  where the peaks measure 0.176 Th (`centrix calibrate` on TR02, 141 isolated peaks). On real spectra that splits
   little: 4 MS1 spectra of TR01 give a median of 462 centroids at 0.073 Th, 250 at 0.13 Th and 171
   at 0.17 Th, against Thermo's 422.
 - *Simulated Gaussian peaks* (`TestCentrixSeparatesCloseSignals`, and a probe at four true widths):
