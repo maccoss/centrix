@@ -39,7 +39,8 @@ The code is in `src/Centrix.Core`:
 6. **Centroids.** Every coefficient above zero is a centroid, moved between grid points to the
    vertex of the parabola through the logarithms of it and its neighbors when both are above zero.
    Its intensity is the coefficient times `sigma sqrt(2 pi) / spacing`, the sum of its peak's
-   samples. Centroids closer than sigma merge, intensity-weighted.
+   samples. Centroids closer than `--min-centroid-separation` merge, intensity-weighted; by default
+   that distance is the sigma, 0.6 Th on the Stellar's MS2.
 
 The grid spacing is each spectrum's median point gap, and a basis is kept per spacing, so a run
 whose levels (or scan types) are sampled differently is fitted on each one's own grid.
@@ -84,6 +85,13 @@ into one centroid between them. A unit-resolution search such as Osprey's tolera
 does not: the isotope is lost and the fragment's m/z moves toward it. A narrow sigma keeps them apart,
 and below about 1.7 spacings it also splits single peaks: 0.22 Th splits 84% of clean
 single-species peaks on the Stellar's MS2, and every centroid's m/z scatters.
+
+Not all of a wide sigma's merging is the fit's. After it, centroids closer than
+`--min-centroid-separation` merge, and that distance defaults to the sigma. At 0.6 Th, then, no
+two centroids come out closer than 0.6 Th: a doubly charged fragment's M+0 and M+1 become one, and
+so do two different fragments 0.5 Th apart. The detection results below were measured with this
+default. Setting `--min-centroid-separation` below the sigma keeps pairs the fit separates, but
+that combination has not been searched.
 
 Both were measured on the Stellar's 2026-10-09 HeLa runs: three replicates each of 2 Th windows,
 4 Th windows overlapped by half, and SuperOverlap, MS2 at 200 kTh/s. The overlapped runs were
@@ -150,8 +158,10 @@ median M+1 error within 0.01 Th. It is also the sigma of the Stellar's clean sin
 or more (0.39 to 0.44 Th), where peaks of fewer ions read 0.23 Th.
 
 The old rule, 1.1 spacings (0.22 Th), came from a sweep of the same 2 Th runs before
-ProteoWizard/pwiz#4997's MS2 offset curve ([results](results.md#earlier-searches-osprey-proteowizardpwiz4710)), judged at q 1% rather than at a matched entrapment FDP. It splits most single peaks, gives
-the fewest identifications here, and the least precise M+0 short of 0.85 Th.
+ProteoWizard/pwiz#4997's MS2 offset curve
+([results](results.md#earlier-searches-osprey-proteowizardpwiz4710)), judged at q 1% rather than
+at a matched entrapment FDP. It splits most single peaks, gives the fewest identifications here,
+and the least precise M+0 short of 0.85 Th.
 
 **One sigma for demultiplexed and plain MS2.** The sigma depends on the scan rate alone. The joint
 demultiplexer takes its sigma from the acquired MS2 by the same rule, and both tables put each
@@ -208,8 +218,9 @@ a cell holds a centroid by chance 17% to 30% of the time:
 At 1.1 spacings the M+1 and M+2 of every triply charged precursor here, and the M+1 of every doubly
 charged one, are found in their isotope cells, with a median M+1 error within 0.01 Th and a precision
 of about 0.05 Th. Wider sigmas merge triply charged isotopes and move the median errors by up to
-0.07 Th. Narrower sigmas were not tried. In spacings, measurement's optimum is not the same at the two rates (1.1 at 67 kTh/s, about
-1.9 at 200 kTh/s), so a scan rate other than these needs its own check.
+0.07 Th. Narrower sigmas were not tried. In spacings, measurement's optimum is not the same at the
+two rates (1.1 at 67 kTh/s, about 1.9 at 200 kTh/s), so a scan rate other than these needs its own
+check.
 
 ### Off a linear ion trap
 

@@ -8,7 +8,9 @@ mzML through ProteoWizard's C# libraries (pwiz-sharp).
 
 **Primary goal:** separate two or more signals within 1 m/z of each other, which the vendor's
 one-centroid-per-maximum centroider merges, by a non-negative lasso on a Gaussian basis, one
-candidate per profile point. **Second goal:** demultiplex staggered Stellar DIA (50% overlap,
+candidate per profile point. The default MS2 sigma (3 spacings, 0.6 Th) is chosen for detection and
+merges centroids closer than 0.6 Th; the measurement sigma (`--sigma-ms2 0.38`) keeps them apart
+(docs/algorithm.md). **Second goal:** demultiplex staggered Stellar DIA (50% overlap,
 SuperOverlap) jointly with centroiding.
 
 Language: C# on .NET 10. The Rust implementation is history (tag `rust-final`).

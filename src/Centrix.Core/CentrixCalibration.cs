@@ -147,16 +147,22 @@ namespace Centrix
 
         /// <summary>
         /// The sigma, Th, for spectra of one MS level: with a linear ion trap scan rate, <see cref="SigmaPerSpacing"/>
-        /// of its point spacing. Without one, from the isolated peaks' FWHMs collected: their
-        /// <see cref="WIDTH_QUANTILE"/> quantile over <see cref="FWHM_PER_SIGMA"/>, or <see cref="FALLBACK_SIGMA_TH"/>
-        /// with fewer than <see cref="MIN_PEAKS"/> widths.
+        /// of its point spacing. Without one, <see cref="WidthSigma"/> of the isolated peaks' FWHMs collected, or
+        /// <see cref="FALLBACK_SIGMA_TH"/> with fewer than <see cref="MIN_PEAKS"/> widths.
         /// </summary>
         public static double EstimateSigma(List<double> fwhms, LinearIonTrapScanRate scanRate, int msLevel)
         {
             if (scanRate != null)
                 return SigmaPerSpacing(msLevel) * scanRate.SpacingTh;
-            if (fwhms.Count < MIN_PEAKS)
-                return FALLBACK_SIGMA_TH;
+            return fwhms.Count < MIN_PEAKS ? FALLBACK_SIGMA_TH : WidthSigma(fwhms);
+        }
+
+        /// <summary>
+        /// The sigma, Th, that isolated peaks' FWHMs measure, whatever the scan rate: their <see cref="WIDTH_QUANTILE"/>
+        /// quantile over <see cref="FWHM_PER_SIGMA"/>. At least one width.
+        /// </summary>
+        public static double WidthSigma(List<double> fwhms)
+        {
             var sorted = fwhms.ToArray();
             Array.Sort(sorted); // Array.Sort OK: equal doubles are indistinguishable
             return sorted[(int)(WIDTH_QUANTILE * (sorted.Length - 1))] / FWHM_PER_SIGMA;
@@ -345,7 +351,7 @@ namespace Centrix
         public double MeasuredSigma(int msLevel)
         {
             var fwhms = _fwhms[Slot(msLevel)];
-            return fwhms.Count >= CentrixCalibration.MIN_PEAKS ? CentrixCalibration.EstimateSigma(fwhms, null, msLevel) : double.NaN;
+            return fwhms.Count >= CentrixCalibration.MIN_PEAKS ? CentrixCalibration.WidthSigma(fwhms) : double.NaN;
         }
 
         /// <summary>A level's sigma, Th.</summary>

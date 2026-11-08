@@ -17,7 +17,9 @@ wide at half maximum. The vendor's centroider places one centroid per local maxi
 fragments less than about 1 Th apart come out as one centroid, at an m/z that belongs to neither.
 Centrix fits each region of the profile with Gaussian peaks of the instrument's width, one candidate
 per profile point, by a non-negative lasso, and keeps the few that explain the signal. Signals
-closer than 1 Th come out separately.
+closer than 1 Th come out separately at MS1 and at the MS2 sigma that measures fragments best
+(`--sigma-ms2 0.38`). The default MS2 sigma, 0.6 Th, detects the most peptides instead, and merges
+centroids closer than 0.6 Th ([detecting peptides and measuring them](docs/algorithm.md#detecting-peptides-and-measuring-them)).
 
 Three Stellar HeLa runs (2 Th DIA, profile), searched by Osprey with a CarafeSharp library
 fine-tuned on the middle run, at 1% FDR ([docs/results.md](docs/results.md)):
