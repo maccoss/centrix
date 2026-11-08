@@ -17,7 +17,9 @@ wide at half maximum. The vendor's centroider places one centroid per local maxi
 fragments less than about 1 Th apart come out as one centroid, at an m/z that belongs to neither.
 Centrix fits each region of the profile with Gaussian peaks of the instrument's width, one candidate
 per profile point, by a non-negative lasso, and keeps the few that explain the signal. Signals
-closer than 1 Th come out separately.
+closer than 1 Th come out separately at MS1 and at the MS2 sigma that measures fragments best
+(`--sigma-ms2 0.38`). The default MS2 sigma, 0.6 Th, detects the most peptides instead, and merges
+centroids closer than 0.6 Th ([detecting peptides and measuring them](docs/algorithm.md#detecting-peptides-and-measuring-them)).
 
 Three Stellar HeLa runs (2 Th DIA, profile), searched by Osprey with a CarafeSharp library
 fine-tuned on the middle run, at 1% FDR ([docs/results.md](docs/results.md)):
@@ -81,10 +83,13 @@ rest to the vendor's centroider: on a Fusion, the ion trap's MS2 by Centrix and 
 Thermo's. Every option is in [docs/usage.md](docs/usage.md); `centrix --help` lists them.
 
 **What it decides from the data.** The peak width Centrix fits with comes from the run: on a linear
-ion trap, 1.1 profile point spacings, and the point spacing identifies the scan rate (0.22 Th at
-200 kTh/s, 0.138 Th at 125 kTh/s, 0.073 Th at 67 kTh/s). That rule was set by searches at 200 kTh/s
-only; at other rates `centrix calibrate` shows the width the run's peaks measure beside it, and
-`--sigma` overrides it ([docs/algorithm.md](docs/algorithm.md#the-peak-sigma)). Staggered windows are
+ion trap the point spacing identifies the scan rate, and MS2 is fitted at three point spacings
+(0.6 Th at the Stellar's 200 kTh/s), the width that detects the most peptides, MS1 at 1.1 (0.073 Th
+at 67 kTh/s), the width of those tried that measures precursor isotopes best. To measure fragments rather than
+detect peptides, about two spacings (`--sigma-ms2 0.38` on a Stellar) keeps each fragment's M+1
+isotope apart ([docs/algorithm.md](docs/algorithm.md#detecting-peptides-and-measuring-them)). The
+rules were set on one rate per level; at other rates `centrix calibrate` shows the width the run's
+peaks measure beside them, and `--sigma` overrides them. Staggered windows are
 demultiplexed when they are detected. On a Stellar, which performs no zoom scans, the zoom-scan label
 its `.raw` files put on 200 kTh/s spectra is removed, and its Adaptive RT alignment scans are left out ([docs/usage.md](docs/usage.md#the-stellars-zoom-scan-label)).
 

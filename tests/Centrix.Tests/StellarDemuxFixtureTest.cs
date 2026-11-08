@@ -48,12 +48,24 @@ namespace Centrix.Tests
         private const string REBLESS_VARIABLE = "CENTRIX_REBLESS_DEMUX_FIXTURE";
         internal const string STELLAR_SLICE = "stellar-superoverlap-profile-slice.mzML";
         internal const string STELLAR_GOLDEN = "stellar-superoverlap-joint-demux.golden.tsv";
+        internal const string STELLAR_MEASURE_GOLDEN = "stellar-superoverlap-joint-demux-sigma038.golden.tsv";
 
         /// <summary>The summed intensities and mean m/z of a golden are compared to this relative tolerance.</summary>
         private const double RELATIVE_TOLERANCE = 1e-9;
 
+        /// <summary>
+        /// The joint solve twice: at the default sigma, which detects the most peptides (three point spacings, 0.6 Th),
+        /// and at 0.38 Th, which measures fragment m/z best and keeps most M+1 isotopes apart (<c>--sigma-ms2 0.38</c>).
+        /// </summary>
         [TestMethod]
         public void TestDemuxStellarFixture()
+        {
+            CheckStellarJoint(0, STELLAR_GOLDEN);
+            CheckStellarJoint(0.38, STELLAR_MEASURE_GOLDEN);
+        }
+
+        /// <summary>The slice through the staggered joint solve at one profile peak sigma, Th (0: the run's).</summary>
+        private static void CheckStellarJoint(double peakSigmaTh, string golden)
         {
             var msd = TestData.Open(TestData.Path(FOLDER, STELLAR_SLICE));
             var spectra = msd.Run.SpectrumList;
@@ -67,7 +79,10 @@ namespace Centrix.Tests
                 Assert.AreEqual(IonResponse.Of(MassAnalyzerKind.ion_trap), info.IonResponse, $"spectrum {i} ion response");
             }
 
-            var options = new ScanningDemuxOptions { Joint = true, IonsFromFillTime = true, Threads = 4 };
+            var options = new ScanningDemuxOptions
+            {
+                Joint = true, IonsFromFillTime = true, Threads = 4, LinearPeakSigmaTh = peakSigmaTh
+            };
             options.JointParameters.UseStaggeredDefaults();
             var pipeline = new StaggeredDemuxPipeline(new FillTimeAsFloat(source), options, TextWriter.Null);
             Assert.AreEqual(DemuxSchemeKind.overlapping, pipeline.Scheme.Kind);
@@ -85,7 +100,7 @@ namespace Centrix.Tests
                 lines.Add(Line(o, pipeline.BaseIndex(o).ToString(CultureInfo.InvariantCulture), bin.LowerBound,
                     bin.UpperBound, mz, ions.Select(v => v * perIon).ToArray()));
             }
-            CheckGolden(STELLAR_GOLDEN, lines, RELATIVE_TOLERANCE);
+            CheckGolden(golden, lines, RELATIVE_TOLERANCE);
         }
 
         /// <summary>A source whose fill times are rounded to 32-bit floats, as Osprey's reader keeps them.</summary>

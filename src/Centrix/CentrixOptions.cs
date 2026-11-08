@@ -105,9 +105,13 @@ Centroiding:
       --centroid <mode>        auto (default): Centrix for ion trap profile spectra, the vendor's centroids for
                                other analyzers' (a Fusion's Orbitrap MS1). centrix: Centrix for every profile
                                spectrum. vendor: the vendor's centroids only, the baseline to compare with.
-      --sigma <Th>             The peak sigma of every MS level. Default: from the run, 1.1 profile point
-                               spacings on a linear ion trap (0.22 Th at the Stellar's 200 kTh/s MS2, 0.073 Th
-                               at its 67 kTh/s MS1), measured from the run's isolated peaks elsewhere.
+      --sigma <Th>             The peak sigma of every MS level. Default: from the run. On a linear ion trap,
+                               MS2 at three profile point spacings (0.6 Th at the Stellar's 200 kTh/s), the
+                               sigma that detects the most peptides, and MS1 at 1.1 (0.073 Th at its
+                               67 kTh/s), which measures precursor isotopes best of the sigmas tried;
+                               measured from the run's isolated peaks elsewhere. About two spacings
+                               (--sigma-ms2 0.38 on a Stellar) measures fragment m/z best, resolving M+1
+                               isotopes.
       --sigma-ms1, --sigma-ms2 <Th>
                                One level's peak sigma, over --sigma.
       --solver <solver>        descent (default): Rust Centrix's coordinate descent. active-set: the exact optimum

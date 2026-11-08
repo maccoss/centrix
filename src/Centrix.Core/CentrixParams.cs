@@ -54,8 +54,8 @@ namespace Centrix
         /// <summary>
         /// The sigma of the Gaussian peaks the profile is fitted with, in Th. Must be positive and finite for
         /// <see cref="CentrixCentroider"/>. Callers pass 0 to mean "from the run" and replace it with
-        /// <see cref="CentrixCalibration"/>'s sigma before constructing the centroider (on a linear ion trap, 1.1 point
-        /// spacings: 0.22 Th for a Thermo Stellar's MS2 at 200 kTh/s). The default, 0.33 Th, is the width once measured
+        /// <see cref="CentrixCalibration"/>'s sigma before constructing the centroider (on a linear ion trap, three point
+        /// spacings: 0.6 Th for a Thermo Stellar's MS2 at 200 kTh/s). The default, 0.33 Th, is the width once measured
         /// on the Stellar's summed staggered MS2 windows, for callers that build these settings directly. Centrix's own
         /// calibration is not ported: the Stellar's MS2 filter strings carry no scan rate code it knows (they read "Z",
         /// which the Stellar uses to mark Adaptive RT spectra), and its wavelet fit reads the broad wings of these peaks
@@ -111,7 +111,10 @@ namespace Centrix
         /// <summary>The step, in Th, between the noise windows.</summary>
         public double NoiseStepTh { get; set; } = 5;
 
-        /// <summary>Centroids closer than this, in Th, merge into one. Zero: the peak sigma.</summary>
+        /// <summary>
+        /// Centroids closer than this, in Th, merge into one. Zero: the peak sigma, which on a linear ion trap's MS2
+        /// is three point spacings (0.6 Th at 200 kTh/s), so a doubly charged fragment's M+0 and M+1 merge.
+        /// </summary>
         public double MinCentroidSeparationTh { get; set; }
 
         /// <summary>

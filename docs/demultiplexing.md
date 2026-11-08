@@ -17,8 +17,8 @@ as in any run.
 | 2 Th windows, profile + Centrix | 27,673 / 25,591 |
 
 Searched by Osprey with a Carafe library at 1% precursor q (ProteoWizard/pwiz#4710), at a Centrix
-sigma of 0.33 Th, before the 1.1-spacing rule; the joint solve at that rule is not yet searched,
-though it scores at least as well on the truth benchmark below. Staggered 4 Th windows recover most
+sigma of 0.33 Th. The joint solve at the current rule, three spacings, is searched at matched
+entrapment FDP in [algorithm](algorithm.md#detecting-peptides-and-measuring-them). Staggered 4 Th windows recover most
 of what 2 Th windows give, at a 4 Th acquisition's cycle time.
 
 ## Using it
@@ -37,7 +37,7 @@ centrix run_4Th-SuperOverlap.raw
 MS2 windows: 8 into 11 bins, 4-fold (overlapping)
 Scheme: overlapping, 8 windows into 11 bins, 4-fold
 Demultiplexing: 800 spectra out, indexed in 1 s
-Profile grid: step 0.2000 Th; peak sigma 0.220 Th = 1.10 samples
+Profile grid: step 0.2000 Th; peak sigma 0.600 Th = 3.00 samples
 ```
 
 (the SuperOverlap test slice, `tests/Centrix.Tests/Data/Demux`).
@@ -52,7 +52,8 @@ Profile grid: step 0.2000 Th; peak sigma 0.220 Th = 1.10 samples
    acquisitions as measured, the others interpolated (makima, grid point by grid point, in rates) to
    the pass's time, so every window is seen at once.
 3. **The fit.** Each bin's Gaussian peaks on the 0.2 Th grid, at the MS2 peak sigma
-   ([algorithm](algorithm.md#the-peak-sigma): 1.1 point spacings, 0.22 Th), Poisson-weighted,
+   ([algorithm](algorithm.md#the-peak-sigma): three point spacings, 0.6 Th, the sigma that detects
+   the most peptides; `--sigma-ms2 0.38` measures fragment m/z best), Poisson-weighted,
    with a z-scaled lasso.
 4. **The split.** Each acquired spectrum's measured profile is split among the bins its window covers
    by those bins' fitted peaks at each grid point (equally where none was fitted). The fit decides the
@@ -122,9 +123,21 @@ SuperOverlap's, and is twice as wide.
 | 3 | 0.507 | 0.950 / 0.961 / 0.706 | 0.959 / 0.967 / 0.798 |
 | 4 | 0.389 | 0.917 / 0.934 / 0.603 | 0.930 / 0.942 / 0.684 |
 
-At the 1.1-spacing sigma (0.22 Th) the joint solve scores 0.985 at k=2 and 0.939 at k=4 (median),
-against 0.982 and 0.930 at 0.33 Th. Writing the fitted peaks instead of splitting the measurements
-scores 0.944 at k=2: the fit carries the errors of the interpolated windows, and Centrix centroids
+By sigma, the joint split + Centrix on the same slice rebuilt, each sigma scored against truth
+centroided at that sigma, and in parentheses the share of the no-demultiplexing gap to a perfect
+cosine that the solve closes:
+
+| k | 0.22 Th | 0.38 Th | 0.6 Th |
+|---|---|---|---|
+| 2 | 0.985 / 0.988 / 0.941 (94%) | 0.982 / 0.985 / 0.923 (94%) | 0.950 / 0.964 / 0.789 (86%) |
+| 4 | 0.938 / 0.949 / 0.721 (89%) | 0.926 / 0.939 / 0.671 (88%) | 0.839 / 0.873 / 0.498 (76%) |
+
+The default, 0.6 Th, splits less accurately than narrower sigmas, while the searches still favor it
+(SuperOverlap 38,046 / 41,355 precursors against 36,837 / 40,333 at 0.38 Th, at entrapment FDP
+0.5% / 1%): detection tolerates a coarser split as it tolerates merged isotopes. To measure
+demultiplexed fragments, 0.38 Th (`--sigma-ms2 0.38`) is better on both counts.
+
+Writing the fitted peaks instead of splitting the measurements scores 0.944 at k=2: the fit carries the errors of the interpolated windows, and Centrix centroids
 the split measurements more stably.
 
 **Determinism.** Blocks are independent and each writes only the output it owns; the source is read

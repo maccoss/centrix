@@ -69,5 +69,24 @@ The same 2 Th runs and the lab's staggered sets, searched with a Carafe library 
 | 4 Th, 50% overlap, demultiplexed + Centrix (2 Th bins) | 25,464 / 23,504 |
 | 4 Th, SuperOverlap, demultiplexed + Centrix (1 Th bins) | 26,468 / 24,537 |
 
-The peak-sigma sweep that set the 1.1-spacing rule, and the same runs acquired in centroid mode
-(47,405 precursors), are in [algorithm.md](algorithm.md#the-peak-sigma).
+The peak-sigma sweep that set the old 1.1-spacing rule (Osprey before ProteoWizard/pwiz#4997's MS2
+offset curve; three HeLa 2 Th runs, MS1 0.2 Th in every arm, judged at q 1%):
+
+| MS2 sigma | Experiment precursors at q 1% | Entrapment FDP (combined) |
+|---|---|---|
+| 0.12 Th | 33,725 | 0.27% |
+| 0.15 Th | 34,604 | 0.34% |
+| 0.18 Th | 34,621 | 0.32% |
+| 0.20 Th (1 spacing) | 35,077 | 0.34% |
+| 0.21 Th | 35,849 | 0.51% |
+| 0.22 Th (1.1 spacings) | 36,001 | 0.53% |
+| 0.24 Th | 35,680 | 0.52% |
+| 0.27 Th | 35,116 | 0.63% |
+| 0.30 Th | 34,330 | 0.51% |
+| 0.33 Th | 32,526 | 0.53% |
+| 0.36 Th | 32,297 | 0.47% |
+
+The same three runs acquired in centroid mode gave 47,405 (0.49%). With the MS2 offset curve, a
+library fine-tuned on these runs and scoring by gradient-boosted trees, a sweep at matched
+entrapment FDP replaced it: the current rule, three spacings, and why measurement wants about two,
+are in [algorithm.md](algorithm.md#detecting-peptides-and-measuring-them).
